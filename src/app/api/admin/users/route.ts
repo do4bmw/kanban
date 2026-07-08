@@ -21,6 +21,40 @@ export async function GET() {
   return NextResponse.json(users)
 }
 
+export async function DELETE(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!(await requireAdmin(session))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  try {
+    const body = await req.json()
+    const { userId } = body
+    if (!userId) return NextResponse.json({ error: "userId is required" }, { status: 400 })
+
+    const currentUserId = (session!.user as any).id
+    if (userId === currentUserId) {
+      return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 })
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id: userId } })
+    if (!targetUser) return NextResponse.json({ error: "User not found" }, { status: 404 })
+
+    if (targetUser.role === "ADMIN") {
+      const adminCount = await prisma.user.count({ where: { role: "ADMIN" } })
+      if (adminCount <= 1) {
+        return NextResponse.json({ error: "Cannot delete the last admin" }, { status: 400 })
+      }
+    }
+
+    await prisma.user.delete({ where: { id: userId } })
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error(err)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!(await requireAdmin(session))) {

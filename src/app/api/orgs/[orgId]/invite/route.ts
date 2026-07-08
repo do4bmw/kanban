@@ -34,7 +34,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
     const inviteUrl = `${baseUrl}/invite/${invitation.token}`
 
-    return NextResponse.json({ invitation, inviteUrl }, { status: 201 })
+    let emailSent = false
+    const { mailerEnabled, sendInvitationEmail } = await import("@/lib/mailer")
+    if (mailerEnabled()) {
+      try {
+        const caller = await prisma.user.findUnique({ where: { id: callerId }, select: { name: true } })
+        const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+        await sendInvitationEmail(email, org?.name ?? orgId, caller?.name ?? "Jemand", inviteUrl, role)
+        emailSent = true
+      } catch (mailErr) {
+        console.error("[invite] Failed to send email:", mailErr)
+      }
+    }
+
+    return NextResponse.json({ invitation, inviteUrl, emailSent }, { status: 201 })
   } catch (err) {
     console.error(err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

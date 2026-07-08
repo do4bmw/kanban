@@ -40,6 +40,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-kanban}:${POSTGRES_PASSWORD}@db/${POSTGRES_DB:-kanban}
       NEXTAUTH_URL: ${NEXTAUTH_URL}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
 
 volumes:
   pgdata:

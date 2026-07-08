@@ -45,6 +45,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
       data: { name, description, orgId },
     })
 
+    await prisma.column.createMany({
+      data: [
+        { name: "Backlog", order: 0, projectId: project.id },
+        { name: "To Do", order: 1, projectId: project.id },
+        { name: "In Progress", order: 2, projectId: project.id },
+        { name: "Review", order: 3, projectId: project.id },
+        { name: "Done", order: 4, projectId: project.id },
+      ],
+    })
+
     return NextResponse.json(project, { status: 201 })
   } catch (err) {
     console.error(err)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { canManageColumns } from "@/lib/permissions"
 
 async function getMembershipForColumn(columnId: string, userId: string) {
   const column = await prisma.column.findUnique({
@@ -24,7 +25,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
   const { column, membership } = await getMembershipForColumn(columnId, userId)
   if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!canManageColumns(membership.role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  }
 
   try {
     const body = await req.json()
@@ -49,7 +52,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { column, membership } = await getMembershipForColumn(columnId, userId)
   if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!canManageColumns(membership.role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  }
 
   await prisma.column.delete({ where: { id: columnId } })
   return NextResponse.json({ success: true })

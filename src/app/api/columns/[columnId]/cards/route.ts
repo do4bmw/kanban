@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { canEditCards } from "@/lib/permissions"
 
 async function getMembershipForColumn(columnId: string, userId: string) {
   const column = await prisma.column.findUnique({
@@ -24,7 +25,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
   const { column, membership } = await getMembershipForColumn(columnId, userId)
   if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!canEditCards(membership.role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  }
 
   try {
     const body = await req.json()

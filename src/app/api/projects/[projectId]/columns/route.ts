@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { canManageColumns } from "@/lib/permissions"
 
 async function getMembershipForProject(projectId: string, userId: string) {
   const project = await prisma.project.findUnique({ where: { id: projectId } })
@@ -21,7 +22,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const { project, membership } = await getMembershipForProject(projectId, userId)
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!canManageColumns(membership.role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  }
 
   try {
     const body = await req.json()

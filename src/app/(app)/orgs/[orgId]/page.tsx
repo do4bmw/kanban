@@ -43,6 +43,11 @@ interface Member {
   user: { id: string; name: string; email: string }
 }
 
+interface InviteResult {
+  inviteUrl: string
+  emailSent: boolean
+}
+
 interface OrgPageProps {
   params: Promise<{ orgId: string }>
 }
@@ -56,6 +61,7 @@ export default function OrgPage({ params }: OrgPageProps) {
   const [orgName, setOrgName] = useState("")
   const [loading, setLoading] = useState(true)
   const [currentMemberRole, setCurrentMemberRole] = useState<string>("MEMBER")
+  const [currentUserId, setCurrentUserId] = useState<string>("")
 
   // Create project dialog
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
@@ -68,7 +74,7 @@ export default function OrgPage({ params }: OrgPageProps) {
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState("MEMBER")
   const [inviting, setInviting] = useState(false)
-  const [inviteUrl, setInviteUrl] = useState("")
+  const [inviteResult, setInviteResult] = useState<InviteResult | null>(null)
 
   useEffect(() => {
     fetchData()
@@ -77,9 +83,10 @@ export default function OrgPage({ params }: OrgPageProps) {
   async function fetchData() {
     setLoading(true)
     try {
-      const [projRes, membRes] = await Promise.all([
+      const [projRes, membRes, sessionRes] = await Promise.all([
         fetch(`/api/orgs/${orgId}/projects`),
         fetch(`/api/orgs/${orgId}/members`),
+        fetch("/api/auth/session"),
       ])
 
       if (!projRes.ok || !membRes.ok) {
@@ -93,38 +100,19 @@ export default function OrgPage({ params }: OrgPageProps) {
       setProjects(projData)
       setMembers(membData)
 
-      // Get org name from members response or try another way
-      if (membData.length > 0) {
-        // Try to get org info
-        const meRes = await fetch("/api/orgs")
-        if (meRes.ok) {
-          const orgs = await meRes.json()
-          const org = orgs.find((o: any) => o.id === orgId)
-          if (org) {
-            setOrgName(org.name)
-            // Determine current user role
-            const currentUser = membData.find((m: any) => {
-              return true // we'll get from session
-            })
-          }
-        }
-      }
-
-      // Determine current user role from session
-      const sessionRes = await fetch("/api/auth/session")
       if (sessionRes.ok) {
         const session = await sessionRes.json()
         const myId = session?.user?.id
+        setCurrentUserId(myId ?? "")
         const me = membData.find((m) => m.user.id === myId)
         if (me) setCurrentMemberRole(me.role)
-        if (!orgName) {
-          const orgsRes = await fetch("/api/orgs")
-          if (orgsRes.ok) {
-            const orgs = await orgsRes.json()
-            const org = orgs.find((o: any) => o.id === orgId)
-            if (org) setOrgName(org.name)
-          }
-        }
+      }
+
+      const orgsRes = await fetch("/api/orgs")
+      if (orgsRes.ok) {
+        const orgs = await orgsRes.json()
+        const org = orgs.find((o: any) => o.id === orgId)
+        if (org) setOrgName(org.name)
       }
     } catch {
       toast.error("Fehler beim Laden")
@@ -145,7 +133,7 @@ export default function OrgPage({ params }: OrgPageProps) {
       })
       if (!res.ok) throw new Error("Fehler")
       const project = await res.json()
-      setProjects((prev) => [...prev, { ...project, _count: { columns: 0 } }])
+      setProjects((prev) => [...prev, { ...project, _count: { columns: 5 } }])
       setProjectDialogOpen(false)
       setNewProjectName("")
       setNewProjectDesc("")
@@ -168,7 +156,7 @@ export default function OrgPage({ params }: OrgPageProps) {
       })
       if (!res.ok) throw new Error("Fehler")
       const data = await res.json()
-      setInviteUrl(data.inviteUrl)
+      setInviteResult({ inviteUrl: data.inviteUrl, emailSent: data.emailSent })
       toast.success("Einladung erstellt!")
     } catch {
       toast.error("Einladung konnte nicht erstellt werden.")
@@ -197,6 +185,7 @@ export default function OrgPage({ params }: OrgPageProps) {
   }
 
   const canManage = ["OWNER", "ADMIN"].includes(currentMemberRole)
+  const isViewer = currentMemberRole === "VIEWER"
 
   if (loading) {
     return (
@@ -215,7 +204,16 @@ export default function OrgPage({ params }: OrgPageProps) {
         </div>
         <div className="flex items-center gap-2">
           {canManage && (
-            <Dialog open={inviteDialogOpen} onOpenChange={(open) => { setInviteDialogOpen(open); if (!open) { setInviteUrl(""); setInviteEmail(""); } }}>
+            <Dialog
+              open={inviteDialogOpen}
+              onOpenChange={(open) => {
+                setInviteDialogOpen(open)
+                if (!open) {
+                  setInviteResult(null)
+                  setInviteEmail("")
+                }
+              }}
+            >
               <DialogTrigger asChild>
                 <Button variant="outline">
                   <UserPlus className="h-4 w-4" />
@@ -223,7 +221,7 @@ export default function OrgPage({ params }: OrgPageProps) {
                 </Button>
               </DialogTrigger>
               <DialogContent>
-                {!inviteUrl ? (
+                {!inviteResult ? (
                   <form onSubmit={handleInvite}>
                     <DialogHeader>
                       <DialogTitle>Mitglied einladen</DialogTitle>
@@ -270,25 +268,43 @@ export default function OrgPage({ params }: OrgPageProps) {
                   <>
                     <DialogHeader>
                       <DialogTitle>Einladungslink</DialogTitle>
-                      <DialogDescription>Kopiere diesen Link und sende ihn an {inviteEmail}.</DialogDescription>
+                      <DialogDescription>
+                        {inviteResult.emailSent
+                          ? `E-Mail wurde gesendet an ${inviteEmail}`
+                          : "Kein SMTP konfiguriert — Link manuell teilen:"}
+                      </DialogDescription>
                     </DialogHeader>
-                    <div className="my-6">
+                    <div className="my-6 space-y-3">
+                      {inviteResult.emailSent && (
+                        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          ✓ E-Mail wurde gesendet an <strong>{inviteEmail}</strong>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-                        <code className="flex-1 truncate text-xs text-gray-700 dark:text-gray-300">{inviteUrl}</code>
+                        <code className="flex-1 truncate text-xs text-gray-700 dark:text-gray-300">
+                          {inviteResult.inviteUrl}
+                        </code>
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => { navigator.clipboard.writeText(inviteUrl); toast.success("Kopiert!") }}
+                          onClick={() => {
+                            navigator.clipboard.writeText(inviteResult!.inviteUrl)
+                            toast.success("Kopiert!")
+                          }}
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
                       </div>
-                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Der Link ist 7 Tage gültig.
-                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Der Link ist 7 Tage gültig.</p>
                     </div>
                     <DialogFooter>
-                      <Button onClick={() => { setInviteDialogOpen(false); setInviteUrl(""); setInviteEmail("") }}>
+                      <Button
+                        onClick={() => {
+                          setInviteDialogOpen(false)
+                          setInviteResult(null)
+                          setInviteEmail("")
+                        }}
+                      >
                         Fertig
                       </Button>
                     </DialogFooter>
@@ -297,53 +313,55 @@ export default function OrgPage({ params }: OrgPageProps) {
               </DialogContent>
             </Dialog>
           )}
-          <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4" />
-                Projekt erstellen
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <form onSubmit={handleCreateProject}>
-                <DialogHeader>
-                  <DialogTitle>Neues Projekt</DialogTitle>
-                  <DialogDescription>Erstelle ein neues Kanban-Projekt für diese Organisation.</DialogDescription>
-                </DialogHeader>
-                <div className="my-6 space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="project-name">Name</Label>
-                    <Input
-                      id="project-name"
-                      placeholder="Mein Projekt"
-                      value={newProjectName}
-                      onChange={(e) => setNewProjectName(e.target.value)}
-                      required
-                      autoFocus
-                    />
+          {!isViewer && (
+            <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4" />
+                  Projekt erstellen
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <form onSubmit={handleCreateProject}>
+                  <DialogHeader>
+                    <DialogTitle>Neues Projekt</DialogTitle>
+                    <DialogDescription>Erstelle ein neues Kanban-Projekt für diese Organisation.</DialogDescription>
+                  </DialogHeader>
+                  <div className="my-6 space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="project-name">Name</Label>
+                      <Input
+                        id="project-name"
+                        placeholder="Mein Projekt"
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="project-desc">Beschreibung (optional)</Label>
+                      <Input
+                        id="project-desc"
+                        placeholder="Kurze Beschreibung..."
+                        value={newProjectDesc}
+                        onChange={(e) => setNewProjectDesc(e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="project-desc">Beschreibung (optional)</Label>
-                    <Input
-                      id="project-desc"
-                      placeholder="Kurze Beschreibung..."
-                      value={newProjectDesc}
-                      onChange={(e) => setNewProjectDesc(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setProjectDialogOpen(false)}>
-                    Abbrechen
-                  </Button>
-                  <Button type="submit" disabled={creating}>
-                    {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Erstellen
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setProjectDialogOpen(false)}>
+                      Abbrechen
+                    </Button>
+                    <Button type="submit" disabled={creating}>
+                      {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Erstellen
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
@@ -380,10 +398,12 @@ export default function OrgPage({ params }: OrgPageProps) {
               <Columns3 className="mb-4 h-12 w-12 text-gray-400" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Noch keine Projekte</h3>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Erstelle dein erstes Projekt.</p>
-              <Button className="mt-4" onClick={() => setProjectDialogOpen(true)}>
-                <Plus className="h-4 w-4" />
-                Projekt erstellen
-              </Button>
+              {!isViewer && (
+                <Button className="mt-4" onClick={() => setProjectDialogOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  Projekt erstellen
+                </Button>
+              )}
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -425,7 +445,7 @@ export default function OrgPage({ params }: OrgPageProps) {
               </div>
               <div className="flex items-center gap-3">
                 <Badge variant="secondary">{member.role}</Badge>
-                {canManage && member.role !== "OWNER" && (
+                {canManage && member.role !== "OWNER" && member.user.id !== currentUserId && (
                   <Button
                     size="sm"
                     variant="ghost"

@@ -20,7 +20,7 @@ import {
   Plus,
   Loader2,
   ArrowLeft,
-  Tag,
+  Eye,
   User,
 } from "lucide-react"
 
@@ -68,6 +68,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
   const [columns, setColumns] = useState<ColumnData[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null)
+  const [userRole, setUserRole] = useState<string>("VIEWER")
 
   // Add column state
   const [addingColumn, setAddingColumn] = useState(false)
@@ -94,21 +95,43 @@ export default function ProjectPage({ params }: ProjectPageProps) {
 
   async function fetchProject() {
     try {
-      const res = await fetch(`/api/projects/${projectId}`)
-      if (!res.ok) {
+      const [projectRes, sessionRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}`),
+        fetch("/api/auth/session"),
+      ])
+
+      if (!projectRes.ok) {
         toast.error("Projekt nicht gefunden oder kein Zugriff.")
         router.push("/dashboard")
         return
       }
-      const data: ProjectData = await res.json()
+      const data: ProjectData = await projectRes.json()
       setProject(data)
       setColumns(data.columns)
+
+      // Get user's role in this org
+      if (sessionRes.ok) {
+        const session = await sessionRes.json()
+        const myId = session?.user?.id
+        if (myId && data.orgId) {
+          const membRes = await fetch(`/api/orgs/${data.orgId}/members`)
+          if (membRes.ok) {
+            const members = await membRes.json()
+            const me = members.find((m: any) => m.user.id === myId)
+            if (me) setUserRole(me.role)
+          }
+        }
+      }
     } catch {
       toast.error("Fehler beim Laden des Projekts.")
     } finally {
       setLoading(false)
     }
   }
+
+  const canManage = userRole === "OWNER" || userRole === "ADMIN"
+  const canEdit = userRole !== "VIEWER"
+  const isViewer = userRole === "VIEWER"
 
   const onDragEnd = (result: DropResult) => {
     const { source, destination, draggableId } = result
@@ -119,7 +142,6 @@ export default function ProjectPage({ params }: ProjectPageProps) {
     const destCol = columns.find((c) => c.id === destination.droppableId)!
 
     if (source.droppableId === destination.droppableId) {
-      // Reorder within same column
       const newCards = [...sourceCol.cards]
       const [moved] = newCards.splice(source.index, 1)
       newCards.splice(destination.index, 0, moved)
@@ -133,7 +155,6 @@ export default function ProjectPage({ params }: ProjectPageProps) {
         body: JSON.stringify({ cards: updated.map((c) => ({ id: c.id, columnId: c.columnId, order: c.order })) }),
       }).catch(() => toast.error("Reihenfolge konnte nicht gespeichert werden."))
     } else {
-      // Move between columns
       const srcCards = [...sourceCol.cards]
       const dstCards = [...destCol.cards]
       const [moved] = srcCards.splice(source.index, 1)
@@ -269,12 +290,18 @@ export default function ProjectPage({ params }: ProjectPageProps) {
         <Button variant="ghost" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{project.name}</h1>
           {project.description && (
             <p className="text-sm text-gray-500 dark:text-gray-400">{project.description}</p>
           )}
         </div>
+        {isViewer && (
+          <Badge variant="secondary" className="flex items-center gap-1">
+            <Eye className="h-3 w-3" />
+            Nur Ansicht
+          </Badge>
+        )}
       </div>
 
       {/* Board */}
@@ -288,7 +315,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
               >
                 {/* Column header */}
                 <div className="flex items-center justify-between px-3 py-2">
-                  {renamingColumnId === column.id ? (
+                  {renamingColumnId === column.id && canManage ? (
                     <form
                       onSubmit={(e) => { e.preventDefault(); handleRenameColumn(column.id) }}
                       className="flex-1"
@@ -303,8 +330,10 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                     </form>
                   ) : (
                     <button
-                      className="flex-1 text-left text-sm font-semibold text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
-                      onClick={() => { setRenamingColumnId(column.id); setRenameValue(column.name) }}
+                      className={`flex-1 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 ${canManage ? "hover:text-gray-900 dark:hover:text-gray-100" : "cursor-default"}`}
+                      onClick={() => {
+                        if (canManage) { setRenamingColumnId(column.id); setRenameValue(column.name) }
+                      }}
                     >
                       {column.name}
                     </button>
@@ -313,26 +342,28 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                     <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
                       {column.cards.length}
                     </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6">
-                          <MoreVertical className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => { setRenamingColumnId(column.id); setRenameValue(column.name) }}
-                        >
-                          Umbenennen
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-red-600 focus:text-red-600 dark:text-red-400"
-                          onClick={() => handleDeleteColumn(column.id)}
-                        >
-                          Spalte löschen
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {canManage && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-6 w-6">
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => { setRenamingColumnId(column.id); setRenameValue(column.name) }}
+                          >
+                            Umbenennen
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-red-600 focus:text-red-600 dark:text-red-400"
+                            onClick={() => handleDeleteColumn(column.id)}
+                          >
+                            Spalte löschen
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </div>
 
@@ -405,86 +436,90 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                   )}
                 </Droppable>
 
-                {/* Add card */}
-                <div className="px-2 pb-2">
-                  {addingCardColumn === column.id ? (
-                    <div className="space-y-1.5">
+                {/* Add card — hidden for VIEWER */}
+                {canEdit && (
+                  <div className="px-2 pb-2">
+                    {addingCardColumn === column.id ? (
+                      <div className="space-y-1.5">
+                        <Input
+                          placeholder="Kartentitel..."
+                          value={newCardTitle}
+                          onChange={(e) => setNewCardTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleAddCard(column.id)
+                            if (e.key === "Escape") { setAddingCardColumn(null); setNewCardTitle("") }
+                          }}
+                          className="h-8 text-sm"
+                          autoFocus
+                        />
+                        <div className="flex gap-1">
+                          <Button size="sm" className="h-7 flex-1" onClick={() => handleAddCard(column.id)}>
+                            Hinzufügen
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7"
+                            onClick={() => { setAddingCardColumn(null); setNewCardTitle("") }}
+                          >
+                            ✕
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setAddingCardColumn(column.id); setNewCardTitle("") }}
+                        className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Karte hinzufügen
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Add column — OWNER/ADMIN only */}
+            {canManage && (
+              <div className="w-72 shrink-0">
+                {addingColumn ? (
+                  <div className="rounded-xl bg-gray-100 p-3 dark:bg-gray-900">
+                    <form onSubmit={handleAddColumn} className="space-y-2">
                       <Input
-                        placeholder="Kartentitel..."
-                        value={newCardTitle}
-                        onChange={(e) => setNewCardTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddCard(column.id)
-                          if (e.key === "Escape") { setAddingCardColumn(null); setNewCardTitle("") }
-                        }}
+                        ref={newColumnInputRef}
+                        placeholder="Spaltenname..."
+                        value={newColumnName}
+                        onChange={(e) => setNewColumnName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Escape" && setAddingColumn(false)}
                         className="h-8 text-sm"
-                        autoFocus
                       />
-                      <div className="flex gap-1">
-                        <Button size="sm" className="h-7 flex-1" onClick={() => handleAddCard(column.id)}>
-                          Hinzufügen
+                      <div className="flex gap-1.5">
+                        <Button type="submit" size="sm" className="flex-1">
+                          Erstellen
                         </Button>
                         <Button
+                          type="button"
                           size="sm"
                           variant="ghost"
-                          className="h-7"
-                          onClick={() => { setAddingCardColumn(null); setNewCardTitle("") }}
+                          onClick={() => setAddingColumn(false)}
                         >
                           ✕
                         </Button>
                       </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => { setAddingCardColumn(column.id); setNewCardTitle("") }}
-                      className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Karte hinzufügen
-                    </button>
-                  )}
-                </div>
+                    </form>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setAddingColumn(true)}
+                    className="flex w-full items-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-4 py-3 text-sm font-medium text-gray-500 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-400"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Spalte hinzufügen
+                  </button>
+                )}
               </div>
-            ))}
-
-            {/* Add column */}
-            <div className="w-72 shrink-0">
-              {addingColumn ? (
-                <div className="rounded-xl bg-gray-100 p-3 dark:bg-gray-900">
-                  <form onSubmit={handleAddColumn} className="space-y-2">
-                    <Input
-                      ref={newColumnInputRef}
-                      placeholder="Spaltenname..."
-                      value={newColumnName}
-                      onChange={(e) => setNewColumnName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Escape" && setAddingColumn(false)}
-                      className="h-8 text-sm"
-                    />
-                    <div className="flex gap-1.5">
-                      <Button type="submit" size="sm" className="flex-1">
-                        Erstellen
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setAddingColumn(false)}
-                      >
-                        ✕
-                      </Button>
-                    </div>
-                  </form>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setAddingColumn(true)}
-                  className="flex w-full items-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-4 py-3 text-sm font-medium text-gray-500 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-400"
-                >
-                  <Plus className="h-4 w-4" />
-                  Spalte hinzufügen
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </DragDropContext>
       </div>

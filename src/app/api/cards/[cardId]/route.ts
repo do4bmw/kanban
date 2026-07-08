@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { canEditCards, canDeleteCards } from "@/lib/permissions"
 
 async function getMembershipForCard(cardId: string, userId: string) {
   const card = await prisma.card.findUnique({
@@ -42,7 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ca
   const { card, membership } = await getMembershipForCard(cardId, userId)
   if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!canEditCards(membership.role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  }
 
   try {
     const body = await req.json()
@@ -80,7 +83,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { card, membership } = await getMembershipForCard(cardId, userId)
   if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!canDeleteCards(membership.role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  }
 
   await prisma.card.delete({ where: { id: cardId } })
   return NextResponse.json({ success: true })
