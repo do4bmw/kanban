@@ -20,11 +20,13 @@ export default function LandingPage() {
           )}
         </div>
 
-        <h1 className="text-5xl font-bold tracking-tight text-gray-900 dark:text-gray-100 sm:text-6xl">
-          {appName}
-        </h1>
+        {!logoUrl && (
+          <h1 className="text-4xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+            {appName}
+          </h1>
+        )}
 
-        <p className="mt-4 text-xl text-gray-600 dark:text-gray-400">
+        <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">
           Dein selbst-gehostetes Projekt-Management
         </p>
 
