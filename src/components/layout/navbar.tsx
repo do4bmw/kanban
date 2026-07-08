@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import Image from "next/image"
 import { useSession, signOut } from "next-auth/react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
@@ -36,7 +35,8 @@ export function Navbar() {
         <div className="flex items-center gap-6">
           <Link href="/dashboard" className="flex items-center gap-2">
             {logoUrl ? (
-              <Image src={logoUrl} alt={appName} width={120} height={32} className="h-8 w-auto object-contain" />
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt={appName} className="h-8 w-auto object-contain" />
             ) : (
               <span className="text-xl font-bold text-indigo-600">{appName}</span>
             )}
