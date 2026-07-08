@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   Eye,
   User,
+  Trash2,
 } from "lucide-react"
 
 interface CardLabel {
@@ -221,6 +222,19 @@ export default function ProjectPage({ params }: ProjectPageProps) {
     }
   }
 
+  async function handleDeleteProject() {
+    if (!project) return
+    if (!confirm(`Projekt "${project.name}" und alle Inhalte unwiderruflich löschen?`)) return
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Fehler")
+      toast.success("Projekt gelöscht.")
+      router.push(`/orgs/${project.orgId}`)
+    } catch {
+      toast.error("Projekt konnte nicht gelöscht werden.")
+    }
+  }
+
   async function handleDeleteColumn(columnId: string) {
     if (!confirm("Spalte und alle Karten darin löschen?")) return
     try {
@@ -301,6 +315,16 @@ export default function ProjectPage({ params }: ProjectPageProps) {
             <Eye className="h-3 w-3" />
             Nur Ansicht
           </Badge>
+        )}
+        {(userRole === "OWNER" || userRole === "ADMIN") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDeleteProject}
+            className="text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         )}
       </div>
 

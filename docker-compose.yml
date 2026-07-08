@@ -45,6 +45,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Kanban}
+      NEXT_PUBLIC_LOGO_URL: ${NEXT_PUBLIC_LOGO_URL:-}
 
 volumes:
   pgdata:
