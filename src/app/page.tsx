@@ -26,14 +26,6 @@ export default function LandingPage() {
           </h1>
         )}
 
-        <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">
-          Dein selbst-gehostetes Projekt-Management
-        </p>
-
-        <p className="mt-3 text-base text-gray-500 dark:text-gray-500">
-          Organisiere Aufgaben, verwalte Teams und behalte den Überblick — vollständig in deiner eigenen Infrastruktur.
-        </p>
-
         <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Button asChild size="lg" className="w-full sm:w-auto">
             <Link href="/login">Anmelden</Link>
