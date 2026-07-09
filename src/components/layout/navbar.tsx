@@ -2,6 +2,8 @@
 
 import Link from "next/link"
 import { useSession, signOut } from "next-auth/react"
+import { useTheme } from "next-themes"
+import { useEffect, useState } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -11,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LayoutDashboard, LogOut, Shield } from "lucide-react"
+import { LayoutDashboard, LogOut, Shield, Sun, Moon } from "lucide-react"
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME || "Kanban"
 const logoUrl = process.env.NEXT_PUBLIC_LOGO_URL || ""
@@ -19,6 +21,9 @@ const logoUrl = process.env.NEXT_PUBLIC_LOGO_URL || ""
 export function Navbar() {
   const { data: session } = useSession()
   const user = session?.user as any
+  const { resolvedTheme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   const initials = user?.name
     ? user.name
@@ -49,7 +54,17 @@ export function Navbar() {
           </Link>
         </div>
 
-        <DropdownMenu>
+        <div className="flex items-center gap-2">
+          {mounted && (
+            <button
+              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+              className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+              aria-label="Theme wechseln"
+            >
+              {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+          )}
+          <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
               <Avatar className="h-8 w-8">
@@ -89,6 +104,7 @@ export function Navbar() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
     </header>
   )
