@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2 } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2, Mail, Send, UserPlus } from "lucide-react"
 
 interface AdminUser {
   id: string
@@ -30,7 +32,7 @@ interface Stats {
   cards: number
 }
 
-type Tab = "overview" | "users" | "orgs"
+type Tab = "overview" | "users" | "orgs" | "email"
 
 export default function AdminPage() {
   const { data: session, status } = useSession()
@@ -42,6 +44,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [testMailTo, setTestMailTo] = useState("")
+  const [sendingTest, setSendingTest] = useState(false)
+  const [inviteTo, setInviteTo] = useState("")
+  const [sendingInvite, setSendingInvite] = useState(false)
 
   const currentUser = session?.user as any
 
@@ -146,6 +152,46 @@ export default function AdminPage() {
     }
   }
 
+  async function handleTestMail(e: React.FormEvent) {
+    e.preventDefault()
+    setSendingTest(true)
+    try {
+      const res = await fetch("/api/admin/test-mail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: testMailTo.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(`Test-E-Mail an ${testMailTo} verschickt.`)
+      setTestMailTo("")
+    } catch (err: any) {
+      toast.error(err.message || "Versand fehlgeschlagen.")
+    } finally {
+      setSendingTest(false)
+    }
+  }
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault()
+    setSendingInvite(true)
+    try {
+      const res = await fetch("/api/admin/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: inviteTo.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success(`Einladung an ${inviteTo} verschickt.`)
+      setInviteTo("")
+    } catch (err: any) {
+      toast.error(err.message || "Versand fehlgeschlagen.")
+    } finally {
+      setSendingInvite(false)
+    }
+  }
+
   if (status === "loading" || loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -158,6 +204,7 @@ export default function AdminPage() {
     { id: "overview", label: "Übersicht", icon: <LayoutDashboard className="h-4 w-4" /> },
     { id: "users", label: "Benutzer", icon: <Users className="h-4 w-4" /> },
     { id: "orgs", label: "Organisationen", icon: <Building2 className="h-4 w-4" /> },
+    { id: "email", label: "E-Mail", icon: <Mail className="h-4 w-4" /> },
   ]
 
   return (
@@ -285,6 +332,67 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* E-Mail */}
+      {tab === "email" && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Test-Mail */}
+          <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex items-center gap-2">
+              <Send className="h-5 w-5 text-indigo-600" />
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Test-E-Mail</h2>
+            </div>
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+              Sendet eine Test-E-Mail um die SMTP-Konfiguration zu prüfen.
+            </p>
+            <form onSubmit={handleTestMail} className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="test-mail-to">Empfänger</Label>
+                <Input
+                  id="test-mail-to"
+                  type="email"
+                  placeholder="test@example.com"
+                  value={testMailTo}
+                  onChange={(e) => setTestMailTo(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" disabled={sendingTest} className="w-full">
+                {sendingTest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Test-Mail senden
+              </Button>
+            </form>
+          </div>
+
+          {/* Benutzer einladen */}
+          <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-indigo-600" />
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Benutzer einladen</h2>
+            </div>
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+              Sendet eine Einladungs-E-Mail mit einem Registrierungslink an eine externe E-Mail-Adresse.
+            </p>
+            <form onSubmit={handleInvite} className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="invite-to">E-Mail-Adresse</Label>
+                <Input
+                  id="invite-to"
+                  type="email"
+                  placeholder="neuerpnutzer@example.com"
+                  value={inviteTo}
+                  onChange={(e) => setInviteTo(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" disabled={sendingInvite} className="w-full">
+                {sendingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                Einladung senden
+              </Button>
+            </form>
+          </div>
         </div>
       )}
 

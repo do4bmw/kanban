@@ -33,6 +33,80 @@ export async function sendMail(opts: { to: string; subject: string; html: string
   await transporter.sendMail({ from, ...opts })
 }
 
+export async function sendTestMail(to: string) {
+  const appName = process.env.NEXT_PUBLIC_APP_NAME || "Kanban"
+  const subject = `[${appName}] Test-E-Mail`
+  const html = `
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8" /><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:system-ui,-apple-system,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#4f46e5;padding:32px 40px;">
+      <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">${appName}</h1>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Test-E-Mail</h2>
+      <p style="margin:0 0 12px;color:#374151;font-size:15px;line-height:1.6;">
+        Diese E-Mail wurde über den Admin-Bereich von <strong>${appName}</strong> versandt.<br/>
+        Der SMTP-Versand funktioniert korrekt. ✅
+      </p>
+    </div>
+    <div style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">
+        Automatisch generiert — bitte nicht antworten.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`.trim()
+  await sendMail({ to, subject, html })
+}
+
+export async function sendPlatformInvitation(to: string, inviterName: string) {
+  const appName = process.env.NEXT_PUBLIC_APP_NAME || "Kanban"
+  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
+  const registerUrl = `${baseUrl}/register`
+  const subject = `Du wurdest zu ${appName} eingeladen`
+  const html = `
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8" /><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:system-ui,-apple-system,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#4f46e5;padding:32px 40px;">
+      <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">${appName}</h1>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Du wurdest eingeladen!</h2>
+      <p style="margin:0 0 12px;color:#374151;font-size:15px;line-height:1.6;">
+        <strong>${inviterName}</strong> hat dich eingeladen, <strong>${appName}</strong> zu nutzen.
+      </p>
+      <p style="margin:0 0 32px;color:#374151;font-size:15px;line-height:1.6;">
+        Registriere dich jetzt und starte sofort.
+      </p>
+      <div style="text-align:center;">
+        <a href="${registerUrl}"
+           style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">
+          Jetzt registrieren
+        </a>
+      </div>
+      <p style="margin:32px 0 0;color:#6b7280;font-size:13px;text-align:center;">
+        Oder kopiere diesen Link in deinen Browser:<br/>
+        <a href="${registerUrl}" style="color:#4f46e5;word-break:break-all;">${registerUrl}</a>
+      </p>
+    </div>
+    <div style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">
+        Falls du diese E-Mail nicht erwartet hast, kannst du sie ignorieren.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`.trim()
+  await sendMail({ to, subject, html })
+}
+
 export async function sendInvitationEmail(
   to: string,
   orgName: string,
