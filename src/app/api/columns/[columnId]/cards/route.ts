@@ -2,18 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { canEditCards } from "@/lib/permissions"
-
-async function getMembershipForColumn(columnId: string, userId: string) {
-  const column = await prisma.column.findUnique({
-    where: { id: columnId },
-    include: { project: true },
-  })
-  if (!column) return { column: null, membership: null }
-  const membership = await prisma.orgMember.findUnique({
-    where: { userId_orgId: { userId, orgId: column.project.orgId } },
-  })
-  return { column, membership }
-}
+import { getAccessForColumn } from "@/lib/project-access"
+import { OrgRole } from "@prisma/client"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ columnId: string }> }) {
   const session = await getServerSession(authOptions)
@@ -22,22 +12,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
   const { columnId } = await params
   const userId = (session.user as any).id as string
 
-  const { column, membership } = await getMembershipForColumn(columnId, userId)
-  if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (!canEditCards(membership.role)) {
+  const access = await getAccessForColumn(userId, columnId)
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canEditCards(access.role as OrgRole)) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
+
+  const column = await prisma.column.findUnique({ where: { id: columnId } })
+  if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   try {
     const body = await req.json()
     const { title, description, dueDate, assigneeId } = body
     if (!title) return NextResponse.json({ error: "Title is required" }, { status: 400 })
 
-    const maxOrder = await prisma.card.aggregate({
-      where: { columnId },
-      _max: { order: true },
-    })
+    const maxOrder = await prisma.card.aggregate({ where: { columnId }, _max: { order: true } })
     const order = (maxOrder._max.order ?? -1) + 1
 
     const card = await prisma.card.create({
@@ -69,10 +58,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
   const { columnId } = await params
   const userId = (session.user as any).id as string
 
-  const { column, membership } = await getMembershipForColumn(columnId, userId)
-  if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  const access = await getAccessForColumn(userId, columnId)
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (access.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
 
   try {
     const body = await req.json()
@@ -81,10 +69,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
 
     await prisma.$transaction(
       cards.map((c) =>
-        prisma.card.update({
-          where: { id: c.id },
-          data: { columnId: c.columnId, order: c.order },
-        })
+        prisma.card.update({ where: { id: c.id }, data: { columnId: c.columnId, order: c.order } })
       )
     )
 

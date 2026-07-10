@@ -27,9 +27,10 @@ model User {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  memberships   OrgMember[]
-  assignedCards Card[]      @relation("CardAssignee")
-  invitations   Invitation[]
+  memberships        OrgMember[]
+  projectMemberships ProjectMember[]
+  assignedCards      Card[]          @relation("CardAssignee")
+  invitations        Invitation[]
 }
 
 model Organization {
@@ -67,7 +68,22 @@ model Project {
   orgId String
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  columns Column[]
+  columns     Column[]
+  members     ProjectMember[]
+  invitations Invitation[]
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  role      OrgRole  @default(MEMBER)
+  createdAt DateTime @default(now())
+
+  userId    String
+  projectId String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
 }
 
 model Column {
@@ -120,6 +136,8 @@ model Invitation {
 
   orgId     String
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   invitedBy String
   inviter   User         @relation(fields: [invitedBy], references: [id], onDelete: Cascade)
 

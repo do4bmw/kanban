@@ -16,8 +16,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ org
   const membership = await getMembership(userId, orgId)
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
+  // OWNER/ADMIN see all projects; MEMBER/VIEWER only see assigned projects
+  const where: any = { orgId }
+  if (!["OWNER", "ADMIN"].includes(membership.role)) {
+    where.members = { some: { userId } }
+  }
+
   const projects = await prisma.project.findMany({
-    where: { orgId },
+    where,
     include: { _count: { select: { columns: true } } },
     orderBy: { createdAt: "asc" },
   })
@@ -34,7 +40,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
 
   const membership = await getMembership(userId, orgId)
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!["OWNER", "ADMIN"].includes(membership.role)) {
+    return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  }
 
   try {
     const body = await req.json()
@@ -56,6 +64,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     })
 
     return NextResponse.json(project, { status: 201 })
+  } catch (err) {
+    console.error(err)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ orgId: string }> }) {
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const { orgId } = await params
+  const userId = (session.user as any).id as string
+
+  const membership = await getMembership(userId, orgId)
+  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+
+  try {
+    const body = await req.json()
+    const { columns } = body as { columns: { id: string; order: number }[] }
+    if (!Array.isArray(columns)) return NextResponse.json({ error: "columns array required" }, { status: 400 })
+
+    await prisma.$transaction(columns.map((c) => prisma.column.update({ where: { id: c.id }, data: { order: c.order } })))
+    return NextResponse.json({ success: true })
   } catch (err) {
     console.error(err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
