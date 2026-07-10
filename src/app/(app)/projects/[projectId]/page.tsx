@@ -44,6 +44,7 @@ import {
   UserPlus,
   Users,
   Zap,
+  GripVertical,
 } from "lucide-react"
 
 const COLUMN_COLORS = [
@@ -213,9 +214,24 @@ export default function ProjectPage({ params }: ProjectPageProps) {
   const isViewer = userRole === "VIEWER"
 
   const onDragEnd = (result: DropResult) => {
-    const { source, destination, draggableId } = result
+    const { source, destination, draggableId, type } = result
     if (!destination) return
     if (source.droppableId === destination.droppableId && source.index === destination.index) return
+
+    // Column reordering
+    if (type === "COLUMN") {
+      const reordered = [...columns]
+      const [moved] = reordered.splice(source.index, 1)
+      reordered.splice(destination.index, 0, moved)
+      const updated = reordered.map((c, i) => ({ ...c, order: i }))
+      setColumns(updated)
+      fetch(`/api/projects/${projectId}/columns`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ columns: updated.map((c) => ({ id: c.id, order: c.order })) }),
+      }).catch(() => toast.error("Spaltenreihenfolge konnte nicht gespeichert werden."))
+      return
+    }
 
     const sourceCol = columns.find((c) => c.id === source.droppableId)!
     const destCol = columns.find((c) => c.id === destination.droppableId)!
@@ -507,11 +523,21 @@ export default function ProjectPage({ params }: ProjectPageProps) {
       {/* Board */}
       <div className="flex-1 overflow-x-auto">
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className="flex h-full gap-4 p-6" style={{ minWidth: "max-content" }}>
-            {columnsWithCount.map((column) => (
+          <Droppable droppableId="board" type="COLUMN" direction="horizontal">
+            {(boardProvided) => (
+          <div
+            ref={boardProvided.innerRef}
+            {...boardProvided.droppableProps}
+            className="flex h-full gap-4 p-6"
+            style={{ minWidth: "max-content" }}
+          >
+            {columnsWithCount.map((column, colIndex) => (
+              <Draggable key={column.id} draggableId={`col-${column.id}`} index={colIndex} isDragDisabled={!canManage}>
+                {(colProvided, colSnapshot) => (
               <div
-                key={column.id}
-                className="flex w-72 shrink-0 flex-col rounded-xl bg-gray-100 dark:bg-gray-900"
+                ref={colProvided.innerRef}
+                {...colProvided.draggableProps}
+                className={`flex w-72 shrink-0 flex-col rounded-xl bg-gray-100 dark:bg-gray-900 ${colSnapshot.isDragging ? "shadow-2xl rotate-1" : ""}`}
               >
                 {/* Column header */}
                 <div
@@ -519,6 +545,15 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                   style={{ backgroundColor: column.color ?? "#6b7280" }}
                 >
                   <div className="flex items-center justify-between">
+                    {canManage && (
+                      <span
+                        {...colProvided.dragHandleProps}
+                        className="mr-1 cursor-grab text-white/50 hover:text-white/90 active:cursor-grabbing"
+                        title="Spalte verschieben"
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </span>
+                    )}
                     {renamingColumnId === column.id && canManage ? (
                       <form
                         onSubmit={(e) => { e.preventDefault(); handleRenameColumn(column.id) }}
@@ -718,7 +753,11 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                   </div>
                 )}
               </div>
+                )}
+              </Draggable>
             ))}
+
+            {boardProvided.placeholder}
 
             {/* Add column — OWNER/ADMIN only */}
             {canManage && (
@@ -761,6 +800,8 @@ export default function ProjectPage({ params }: ProjectPageProps) {
               </div>
             )}
           </div>
+            )}
+          </Droppable>
         </DragDropContext>
       </div>
 
