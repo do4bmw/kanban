@@ -15,6 +15,22 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Calendar,
   MoreVertical,
   Plus,
@@ -24,6 +40,8 @@ import {
   User,
   Trash2,
   Palette,
+  UserPlus,
+  Users,
 } from "lucide-react"
 
 const COLUMN_COLORS = [
@@ -73,6 +91,17 @@ interface ProjectData {
   columns: ColumnData[]
 }
 
+interface ProjectMember {
+  id: string
+  role: string
+  user: { id: string; name: string; email: string }
+}
+
+interface InviteResult {
+  inviteUrl: string
+  emailSent: boolean
+}
+
 interface ProjectPageProps {
   params: Promise<{ projectId: string }>
 }
@@ -85,6 +114,13 @@ export default function ProjectPage({ params }: ProjectPageProps) {
   const [loading, setLoading] = useState(true)
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null)
   const [userRole, setUserRole] = useState<string>("VIEWER")
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([])
+  const [membersOpen, setMembersOpen] = useState(false)
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState("")
+  const [inviteRole, setInviteRole] = useState("MEMBER")
+  const [inviting, setInviting] = useState(false)
+  const [inviteResult, setInviteResult] = useState<InviteResult | null>(null)
 
   // Add column state
   const [addingColumn, setAddingColumn] = useState(false)
@@ -125,17 +161,30 @@ export default function ProjectPage({ params }: ProjectPageProps) {
       setProject(data)
       setColumns(data.columns)
 
-      // Get user's role in this org
+      // Get user's effective role (org membership or project membership)
       if (sessionRes.ok) {
         const session = await sessionRes.json()
         const myId = session?.user?.id
         if (myId && data.orgId) {
-          const membRes = await fetch(`/api/orgs/${data.orgId}/members`)
-          if (membRes.ok) {
-            const members = await membRes.json()
+          const [orgMembRes, projMembRes] = await Promise.all([
+            fetch(`/api/orgs/${data.orgId}/members`),
+            fetch(`/api/projects/${projectId}/members`),
+          ])
+          let resolvedRole = "VIEWER"
+          if (orgMembRes.ok) {
+            const members = await orgMembRes.json()
             const me = members.find((m: any) => m.user.id === myId)
-            if (me) setUserRole(me.role)
+            if (me && ["OWNER", "ADMIN"].includes(me.role)) {
+              resolvedRole = me.role
+            }
           }
+          if (projMembRes.ok) {
+            const projMembers: ProjectMember[] = await projMembRes.json()
+            setProjectMembers(projMembers)
+            const me = projMembers.find((m) => m.user.id === myId)
+            if (me && resolvedRole === "VIEWER") resolvedRole = me.role
+          }
+          setUserRole(resolvedRole)
         }
       }
     } catch {
@@ -250,6 +299,42 @@ export default function ProjectPage({ params }: ProjectPageProps) {
     }
   }
 
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault()
+    setInviting(true)
+    try {
+      const res = await fetch(`/api/projects/${projectId}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+      })
+      if (!res.ok) throw new Error("Fehler")
+      const data = await res.json()
+      setInviteResult({ inviteUrl: data.inviteUrl, emailSent: data.emailSent })
+      toast.success("Einladung erstellt!")
+    } catch {
+      toast.error("Einladung konnte nicht erstellt werden.")
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  async function handleRemoveProjectMember(userId: string) {
+    if (!confirm("Mitglied aus dem Projekt entfernen?")) return
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      })
+      if (!res.ok) throw new Error("Fehler")
+      setProjectMembers((prev) => prev.filter((m) => m.user.id !== userId))
+      toast.success("Mitglied entfernt.")
+    } catch {
+      toast.error("Mitglied konnte nicht entfernt werden.")
+    }
+  }
+
   async function handleColorColumn(columnId: string, color: string | null) {
     try {
       await fetch(`/api/columns/${columnId}`, {
@@ -343,6 +428,22 @@ export default function ProjectPage({ params }: ProjectPageProps) {
             <Eye className="h-3 w-3" />
             Nur Ansicht
           </Badge>
+        )}
+        {canManage && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setMembersOpen(true)}
+            className="flex items-center gap-1.5"
+          >
+            <Users className="h-4 w-4" />
+            Mitglieder
+            {projectMembers.length > 0 && (
+              <span className="rounded-full bg-indigo-100 px-1.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
+                {projectMembers.length}
+              </span>
+            )}
+          </Button>
         )}
         {(userRole === "OWNER" || userRole === "ADMIN") && (
           <Button
@@ -601,6 +702,120 @@ export default function ProjectPage({ params }: ProjectPageProps) {
           </div>
         </DragDropContext>
       </div>
+
+      {/* Project Members Dialog */}
+      <Dialog open={membersOpen} onOpenChange={(o) => { setMembersOpen(o); if (!o) { setInviteResult(null); setInviteEmail(""); setInviteDialogOpen(false) } }}>
+        <DialogContent className="max-w-md">
+          {!inviteDialogOpen ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Projekt-Mitglieder
+                </DialogTitle>
+                <DialogDescription>
+                  Personen mit direktem Zugang zu diesem Projekt (ohne die gesamte Organisation zu sehen).
+                </DialogDescription>
+              </DialogHeader>
+              <div className="my-2 space-y-2">
+                {projectMembers.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                    Noch keine direkten Projektmitglieder.
+                  </p>
+                ) : (
+                  projectMembers.map((m) => (
+                    <div key={m.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-gray-900">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{m.user.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{m.user.email}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">{m.role}</Badge>
+                        {canManage && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => handleRemoveProjectMember(m.user.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {canManage && (
+                <DialogFooter>
+                  <Button onClick={() => setInviteDialogOpen(true)} className="w-full">
+                    <UserPlus className="h-4 w-4" />
+                    Person zum Projekt einladen
+                  </Button>
+                </DialogFooter>
+              )}
+            </>
+          ) : !inviteResult ? (
+            <form onSubmit={handleInvite}>
+              <DialogHeader>
+                <DialogTitle>Zum Projekt einladen</DialogTitle>
+                <DialogDescription>
+                  Die eingeladene Person kann nur dieses Projekt sehen, nicht die gesamte Organisation.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="my-6 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="proj-invite-email">E-Mail</Label>
+                  <Input
+                    id="proj-invite-email"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="proj-invite-role">Rolle</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger id="proj-invite-role"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MEMBER">Mitglied</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      <SelectItem value="VIEWER">Betrachter</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>Zurück</Button>
+                <Button type="submit" disabled={inviting}>
+                  {inviting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Einladung erstellen
+                </Button>
+              </DialogFooter>
+            </form>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Einladungslink</DialogTitle>
+                <DialogDescription>
+                  {inviteResult.emailSent
+                    ? `E-Mail wurde gesendet an ${inviteEmail}`
+                    : "Kein SMTP konfiguriert — Link manuell teilen:"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="my-4 space-y-3">
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900">
+                  <code className="block break-all text-xs text-gray-700 dark:text-gray-300">{inviteResult.inviteUrl}</code>
+                </div>
+                <Button variant="outline" className="w-full" onClick={() => { navigator.clipboard.writeText(inviteResult!.inviteUrl); toast.success("Link kopiert!") }}>
+                  Link kopieren
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => { setInviteDialogOpen(false); setInviteResult(null); setInviteEmail(""); setMembersOpen(false) }}>Schließen</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Card Detail Dialog */}
       {selectedCard && (

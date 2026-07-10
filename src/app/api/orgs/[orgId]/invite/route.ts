@@ -20,7 +20,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
   try {
     const body = await req.json()
     const { email, role } = body
-    if (!email || !role) return NextResponse.json({ error: "email and role are required" }, { status: 400 })
+    if (!email || !role || typeof email !== "string") return NextResponse.json({ error: "email and role are required" }, { status: 400 })
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: "Invalid email" }, { status: 400 })
+    const normalizedEmail = email.toLowerCase().trim()
 
     const validRoles = ["OWNER", "ADMIN", "MEMBER", "VIEWER"]
     if (!validRoles.includes(role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 })
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
     const invitation = await prisma.invitation.create({
-      data: { email, role, orgId, invitedBy: callerId, expiresAt },
+      data: { email: normalizedEmail, role, orgId, invitedBy: callerId, expiresAt },
     })
 
     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
           setTimeout(() => reject(new Error("Mail timeout")), 20_000)
         )
         await Promise.race([
-          sendInvitationEmail(email, org?.name ?? orgId, caller?.name ?? "Jemand", inviteUrl, role),
+          sendInvitationEmail(normalizedEmail, org?.name ?? orgId, caller?.name ?? "Jemand", inviteUrl, role),
           timeout,
         ])
         emailSent = true

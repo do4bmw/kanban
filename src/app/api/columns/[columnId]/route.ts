@@ -2,18 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { canManageColumns } from "@/lib/permissions"
-
-async function getMembershipForColumn(columnId: string, userId: string) {
-  const column = await prisma.column.findUnique({
-    where: { id: columnId },
-    include: { project: true },
-  })
-  if (!column) return { column: null, membership: null }
-  const membership = await prisma.orgMember.findUnique({
-    where: { userId_orgId: { userId, orgId: column.project.orgId } },
-  })
-  return { column, membership }
-}
+import { getAccessForColumn } from "@/lib/project-access"
+import { OrgRole } from "@prisma/client"
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ columnId: string }> }) {
   const session = await getServerSession(authOptions)
@@ -22,10 +12,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
   const { columnId } = await params
   const userId = (session.user as any).id as string
 
-  const { column, membership } = await getMembershipForColumn(columnId, userId)
-  if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (!canManageColumns(membership.role)) {
+  const access = await getAccessForColumn(userId, columnId)
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canManageColumns(access.role as OrgRole)) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
 
@@ -53,10 +42,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { columnId } = await params
   const userId = (session.user as any).id as string
 
-  const { column, membership } = await getMembershipForColumn(columnId, userId)
-  if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (!canManageColumns(membership.role)) {
+  const access = await getAccessForColumn(userId, columnId)
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canManageColumns(access.role as OrgRole)) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
 

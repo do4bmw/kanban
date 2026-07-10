@@ -112,6 +112,61 @@ export async function sendPlatformInvitation(to: string, inviterName: string) {
   await sendMail({ to, subject, html })
 }
 
+export async function sendProjectInvitationEmail(
+  to: string,
+  projectName: string,
+  inviterName: string,
+  inviteUrl: string,
+  role: string
+) {
+  const appName = process.env.NEXT_PUBLIC_APP_NAME || "Kanban"
+  const roleLabel: Record<string, string> = {
+    ADMIN: "Administrator",
+    MEMBER: "Mitglied",
+    VIEWER: "Betrachter",
+  }
+  const roleName = roleLabel[role] ?? role
+  const subject = `Du wurdest zum Projekt "${projectName}" eingeladen`
+  const html = `
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8" /><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:system-ui,-apple-system,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#4f46e5;padding:32px 40px;">
+      <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">${appName}</h1>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Projekteinladung</h2>
+      <p style="margin:0 0 12px;color:#374151;font-size:15px;line-height:1.6;">
+        <strong>${inviterName}</strong> hat dich eingeladen, am Projekt
+        <strong>${projectName}</strong> als <strong>${roleName}</strong> mitzuarbeiten.
+      </p>
+      <p style="margin:0 0 32px;color:#374151;font-size:15px;line-height:1.6;">
+        Klicke auf den Button unten, um die Einladung anzunehmen. Der Link ist 7 Tage gültig.
+      </p>
+      <div style="text-align:center;">
+        <a href="${inviteUrl}"
+           style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">
+          Einladung annehmen
+        </a>
+      </div>
+      <p style="margin:32px 0 0;color:#6b7280;font-size:13px;text-align:center;">
+        Oder kopiere diesen Link:<br/>
+        <a href="${inviteUrl}" style="color:#4f46e5;word-break:break-all;">${inviteUrl}</a>
+      </p>
+    </div>
+    <div style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">
+        Falls du diese E-Mail nicht erwartet hast, kannst du sie ignorieren.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`.trim()
+  await sendMail({ to, subject, html })
+}
+
 export async function sendInvitationEmail(
   to: string,
   orgName: string,
