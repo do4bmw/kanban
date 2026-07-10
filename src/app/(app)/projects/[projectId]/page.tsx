@@ -23,7 +23,21 @@ import {
   Eye,
   User,
   Trash2,
+  Palette,
 } from "lucide-react"
+
+const COLUMN_COLORS = [
+  { label: "Grau", value: "#6b7280" },
+  { label: "Blau", value: "#3b82f6" },
+  { label: "Indigo", value: "#6366f1" },
+  { label: "Violett", value: "#a855f7" },
+  { label: "Pink", value: "#ec4899" },
+  { label: "Rot", value: "#ef4444" },
+  { label: "Orange", value: "#f97316" },
+  { label: "Gelb", value: "#eab308" },
+  { label: "Grün", value: "#22c55e" },
+  { label: "Türkis", value: "#14b8a6" },
+]
 
 interface CardLabel {
   id: string
@@ -46,6 +60,7 @@ interface CardData {
 interface ColumnData {
   id: string
   name: string
+  color: string | null
   order: number
   cards: CardData[]
 }
@@ -235,6 +250,19 @@ export default function ProjectPage({ params }: ProjectPageProps) {
     }
   }
 
+  async function handleColorColumn(columnId: string, color: string | null) {
+    try {
+      await fetch(`/api/columns/${columnId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color }),
+      })
+      setColumns((cols) => cols.map((c) => (c.id === columnId ? { ...c, color } : c)))
+    } catch {
+      toast.error("Farbe konnte nicht gespeichert werden.")
+    }
+  }
+
   async function handleDeleteColumn(columnId: string) {
     if (!confirm("Spalte und alle Karten darin löschen?")) return
     try {
@@ -338,46 +366,72 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                 className="flex w-72 shrink-0 flex-col rounded-xl bg-gray-100 dark:bg-gray-900"
               >
                 {/* Column header */}
-                <div className="flex items-center justify-between px-3 py-2">
-                  {renamingColumnId === column.id && canManage ? (
-                    <form
-                      onSubmit={(e) => { e.preventDefault(); handleRenameColumn(column.id) }}
-                      className="flex-1"
-                    >
-                      <Input
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onBlur={() => handleRenameColumn(column.id)}
-                        className="h-7 text-sm font-medium"
-                        autoFocus
-                      />
-                    </form>
-                  ) : (
-                    <button
-                      className={`flex-1 text-left text-sm font-semibold text-gray-700 dark:text-gray-300 ${canManage ? "hover:text-gray-900 dark:hover:text-gray-100" : "cursor-default"}`}
-                      onClick={() => {
-                        if (canManage) { setRenamingColumnId(column.id); setRenameValue(column.name) }
-                      }}
-                    >
-                      {column.name}
-                    </button>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                      {column.cards.length}
-                    </span>
+                <div
+                  className="rounded-t-xl px-3 py-2.5"
+                  style={{ backgroundColor: column.color ?? "#6b7280" }}
+                >
+                  <div className="flex items-center justify-between">
+                    {renamingColumnId === column.id && canManage ? (
+                      <form
+                        onSubmit={(e) => { e.preventDefault(); handleRenameColumn(column.id) }}
+                        className="flex-1 mr-1"
+                      >
+                        <Input
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={() => handleRenameColumn(column.id)}
+                          className="h-7 border-white/40 bg-white/20 text-sm font-semibold text-white placeholder:text-white/60 focus-visible:ring-white/50"
+                          autoFocus
+                        />
+                      </form>
+                    ) : (
+                      <button
+                        className={`flex-1 text-left text-sm font-semibold text-white ${canManage ? "hover:text-white/80" : "cursor-default"}`}
+                        onClick={() => {
+                          if (canManage) { setRenamingColumnId(column.id); setRenameValue(column.name) }
+                        }}
+                      >
+                        {column.name}
+                        <span className="ml-2 rounded-full bg-white/20 px-1.5 py-0.5 text-xs font-medium">
+                          {column.cards.length}
+                        </span>
+                      </button>
+                    )}
                     {canManage && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-6 w-6">
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-white/70 hover:bg-white/20 hover:text-white">
                             <MoreVertical className="h-3.5 w-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="w-52">
                           <DropdownMenuItem
                             onClick={() => { setRenamingColumnId(column.id); setRenameValue(column.name) }}
                           >
                             Umbenennen
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <div className="flex flex-col gap-2 px-2 py-1.5 cursor-default focus:bg-transparent">
+                              <span className="flex items-center gap-1.5 text-sm">
+                                <Palette className="h-3.5 w-3.5" />
+                                Farbe wählen
+                              </span>
+                              <div className="grid grid-cols-5 gap-1.5">
+                                {COLUMN_COLORS.map((c) => (
+                                  <button
+                                    key={c.value}
+                                    title={c.label}
+                                    onClick={(e) => { e.stopPropagation(); handleColorColumn(column.id, c.value) }}
+                                    className="h-6 w-6 rounded-full border-2 transition-transform hover:scale-110"
+                                    style={{
+                                      backgroundColor: c.value,
+                                      borderColor: column.color === c.value ? "white" : "transparent",
+                                      outline: column.color === c.value ? `2px solid ${c.value}` : "none",
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-red-600 focus:text-red-600 dark:text-red-400"

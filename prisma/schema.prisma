@@ -73,6 +73,7 @@ model Project {
 model Column {
   id        String   @id @default(cuid())
   name      String
+  color     String?
   order     Int
   createdAt DateTime @default(now())
 

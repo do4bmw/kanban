@@ -31,10 +31,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
 
   try {
     const body = await req.json()
-    const { name } = body
-    if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 })
+    const { name, color } = body
+    if (!name && color === undefined) return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
 
-    const updated = await prisma.column.update({ where: { id: columnId }, data: { name } })
+    const data: { name?: string; color?: string | null } = {}
+    if (name) data.name = name
+    if (color !== undefined) data.color = color || null
+
+    const updated = await prisma.column.update({ where: { id: columnId }, data })
     return NextResponse.json(updated)
   } catch (err) {
     console.error(err)
