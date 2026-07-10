@@ -43,6 +43,7 @@ interface Member {
 interface CardDetailProps {
   card: CardData
   orgId: string
+  projectId: string
   onClose: () => void
   onUpdate: (updated: CardData) => void
   onDelete: (cardId: string) => void
@@ -54,7 +55,7 @@ const LABEL_COLORS = [
   "#ec4899", "#6b7280",
 ]
 
-export function CardDetailDialog({ card, orgId, onClose, onUpdate, onDelete }: CardDetailProps) {
+export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, onDelete }: CardDetailProps) {
   const [title, setTitle] = useState(card.title)
   const [description, setDescription] = useState(card.description || "")
   const [dueDate, setDueDate] = useState(
@@ -74,10 +75,21 @@ export function CardDetailDialog({ card, orgId, onClose, onUpdate, onDelete }: C
 
   useEffect(() => {
     fetch(`/api/orgs/${orgId}/members`)
-      .then((r) => r.json())
-      .then((data) => setMembers(data))
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json()
+          if (Array.isArray(data)) setMembers(data)
+        } else {
+          // Fallback for project-only members who have no org membership
+          const r2 = await fetch(`/api/projects/${projectId}/members`)
+          if (r2.ok) {
+            const data = await r2.json()
+            if (Array.isArray(data)) setMembers(data)
+          }
+        }
+      })
       .catch(() => {})
-  }, [orgId])
+  }, [orgId, projectId])
 
   async function handleSave() {
     if (!title.trim()) { toast.error("Titel darf nicht leer sein."); return }

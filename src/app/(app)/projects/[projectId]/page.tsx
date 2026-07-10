@@ -822,6 +822,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
         <CardDetailDialog
           card={selectedCard}
           orgId={project.orgId}
+          projectId={projectId}
           onClose={() => setSelectedCard(null)}
           onUpdate={handleCardUpdate}
           onDelete={handleCardDelete}
