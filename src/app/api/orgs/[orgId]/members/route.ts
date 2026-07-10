@@ -43,6 +43,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ o
     const { userId } = body
     if (!userId) return NextResponse.json({ error: "userId is required" }, { status: 400 })
 
+    if (userId === callerId) return NextResponse.json({ error: "Cannot remove yourself" }, { status: 400 })
+
     const targetMembership = await getMembership(userId, orgId)
     if (!targetMembership) return NextResponse.json({ error: "Member not found" }, { status: 404 })
 

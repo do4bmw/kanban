@@ -10,8 +10,17 @@ export async function POST(req: NextRequest) {
     if (!name || !email || !password) {
       return NextResponse.json({ error: "Name, email and password are required" }, { status: 400 })
     }
+    if (typeof name !== "string" || name.trim().length < 2) {
+      return NextResponse.json({ error: "Name must be at least 2 characters" }, { status: 400 })
+    }
+    if (typeof password !== "string" || password.length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 })
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Invalid email address" }, { status: 400 })
+    }
 
-    const existing = await prisma.user.findUnique({ where: { email } })
+    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } })
     if (existing) {
       return NextResponse.json({ error: "Email already in use" }, { status: 400 })
     }
@@ -21,7 +30,7 @@ export async function POST(req: NextRequest) {
 
     const hash = await bcrypt.hash(password, 12)
     const user = await prisma.user.create({
-      data: { name, email, password: hash, role },
+      data: { name: name.trim(), email: email.toLowerCase().trim(), password: hash, role },
       select: { id: true, email: true, name: true, role: true },
     })
 

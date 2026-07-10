@@ -19,6 +19,10 @@ async function getCardWithAccess(cardId: string, userId: string) {
   return { card, access }
 }
 
+function canDeleteCard(card: { createdById: string | null }, userId: string, role: OrgRole): boolean {
+  return canDeleteCards(role) || card.createdById === userId
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ cardId: string }> }) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -83,7 +87,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { card, access } = await getCardWithAccess(cardId, userId)
   if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 })
   if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (!canDeleteCards(access.role as OrgRole)) {
+  if (!canDeleteCard(card, userId, access.role as OrgRole)) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
 

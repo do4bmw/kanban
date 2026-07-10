@@ -30,6 +30,7 @@ model User {
   memberships        OrgMember[]
   projectMemberships ProjectMember[]
   assignedCards      Card[]          @relation("CardAssignee")
+  createdCards       Card[]          @relation("CardCreator")
   invitations        Invitation[]
   cardNotes          CardNote[]
 }
@@ -113,6 +114,8 @@ model Card {
   column     Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
   assigneeId String?
   assignee   User?  @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?  @relation("CardCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   labels CardLabel[]
   notes  CardNote[]

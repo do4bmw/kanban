@@ -35,6 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
         description,
         dueDate: dueDate ? new Date(dueDate) : null,
         assigneeId: assigneeId || null,
+        createdById: userId,
         order,
         columnId,
       },

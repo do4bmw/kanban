@@ -2,15 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { canManageColumns } from "@/lib/permissions"
-
-async function getMembershipForProject(projectId: string, userId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId } })
-  if (!project) return { project: null, membership: null }
-  const membership = await prisma.orgMember.findUnique({
-    where: { userId_orgId: { userId, orgId: project.orgId } },
-  })
-  return { project, membership }
-}
+import { getProjectAccess } from "@/lib/project-access"
+import { OrgRole } from "@prisma/client"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await getServerSession(authOptions)
@@ -19,10 +12,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const { projectId } = await params
   const userId = (session.user as any).id as string
 
-  const { project, membership } = await getMembershipForProject(projectId, userId)
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (!canManageColumns(membership.role)) {
+  const access = await getProjectAccess(userId, projectId)
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!canManageColumns(access.role as OrgRole)) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
 
@@ -52,10 +44,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
   const { projectId } = await params
   const userId = (session.user as any).id as string
 
-  const { project, membership } = await getMembershipForProject(projectId, userId)
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  const access = await getProjectAccess(userId, projectId)
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (access.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
 
   try {
     const body = await req.json()
