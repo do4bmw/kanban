@@ -486,6 +486,24 @@ export default function ProjectPage({ params }: ProjectPageProps) {
         )}
       </div>
 
+      {/* Archive banner */}
+      {showArchived && (
+        <div className="flex items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-6 py-2.5 dark:border-amber-700 dark:bg-amber-950/40">
+          <div className="flex items-center gap-2.5">
+            <Archive className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+              Du befindest dich im Archiv — hier werden nur archivierte Karten angezeigt.
+            </span>
+          </div>
+          <button
+            onClick={() => setShowArchived(false)}
+            className="rounded-md px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/50"
+          >
+            Archiv schließen ✕
+          </button>
+        </div>
+      )}
+
       {/* Board */}
       <div className="flex-1 overflow-x-auto">
         <DragDropContext onDragEnd={onDragEnd}>
