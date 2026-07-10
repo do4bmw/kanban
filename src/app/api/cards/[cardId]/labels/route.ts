@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { getProjectAccess } from "@/lib/project-access"
 
-async function getMembershipForCard(cardId: string, userId: string) {
+async function getCardWithAccess(cardId: string, userId: string) {
   const card = await prisma.card.findUnique({
     where: { id: cardId },
-    include: { column: { include: { project: true } } },
+    include: { column: { select: { projectId: true } } },
   })
-  if (!card) return { card: null, membership: null }
-  const membership = await prisma.orgMember.findUnique({
-    where: { userId_orgId: { userId, orgId: card.column.project.orgId } },
-  })
-  return { card, membership }
+  if (!card) return { card: null, access: null }
+  const access = await getProjectAccess(userId, card.column.projectId)
+  return { card, access }
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ cardId: string }> }) {
@@ -21,10 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ car
   const { cardId } = await params
   const userId = (session.user as any).id as string
 
-  const { card, membership } = await getMembershipForCard(cardId, userId)
+  const { card, access } = await getCardWithAccess(cardId, userId)
   if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (access.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
 
   try {
     const body = await req.json()
@@ -48,10 +47,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ c
   const { cardId } = await params
   const userId = (session.user as any).id as string
 
-  const { card, membership } = await getMembershipForCard(cardId, userId)
+  const { card, access } = await getCardWithAccess(cardId, userId)
   if (!card) return NextResponse.json({ error: "Not found" }, { status: 404 })
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (membership.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (access.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
 
   try {
     const body = await req.json()
