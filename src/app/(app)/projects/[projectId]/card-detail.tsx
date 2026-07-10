@@ -14,12 +14,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Calendar, Loader2, Tag, Trash2, User, X } from "lucide-react"
+import { Calendar, Loader2, MessageSquare, Send, Tag, Trash2, User, X } from "lucide-react"
 
 interface CardLabel {
   id: string
   name: string
   color: string
+}
+
+interface CardNote {
+  id: string
+  content: string
+  createdAt: string
+  author: { id: string; name: string; email: string }
 }
 
 interface CardData {
@@ -68,10 +75,29 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  // New label state
+  // Label state
   const [newLabelName, setNewLabelName] = useState("")
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[5])
   const [addingLabel, setAddingLabel] = useState(false)
+
+  // Notes state
+  const [notes, setNotes] = useState<CardNote[]>([])
+  const [notesLoading, setNotesLoading] = useState(true)
+  const [newNoteContent, setNewNoteContent] = useState("")
+  const [addingNote, setAddingNote] = useState(false)
+
+  useEffect(() => {
+    setNotesLoading(true)
+    fetch(`/api/cards/${card.id}/notes`)
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json()
+          if (Array.isArray(data)) setNotes(data)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setNotesLoading(false))
+  }, [card.id])
 
   useEffect(() => {
     fetch(`/api/orgs/${orgId}/members`)
@@ -151,6 +177,45 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
     } finally {
       setAddingLabel(false)
     }
+  }
+
+  async function handleAddNote(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newNoteContent.trim()) return
+    setAddingNote(true)
+    try {
+      const res = await fetch(`/api/cards/${card.id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newNoteContent.trim() }),
+      })
+      if (!res.ok) throw new Error()
+      const note = await res.json()
+      setNotes((prev) => [...prev, note])
+      setNewNoteContent("")
+    } catch {
+      toast.error("Notiz konnte nicht hinzugefügt werden.")
+    } finally {
+      setAddingNote(false)
+    }
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    try {
+      const res = await fetch(`/api/cards/${card.id}/notes/${noteId}`, { method: "DELETE" })
+      if (!res.ok) throw new Error()
+      setNotes((prev) => prev.filter((n) => n.id !== noteId))
+    } catch {
+      toast.error("Notiz konnte nicht gelöscht werden.")
+    }
+  }
+
+  function formatDateTime(iso: string) {
+    const d = new Date(iso)
+    return d.toLocaleString("de-DE", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    })
   }
 
   async function handleRemoveLabel(labelId: string) {
@@ -278,6 +343,59 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
               </div>
               <Button type="submit" size="sm" variant="outline" disabled={addingLabel || !newLabelName.trim()}>
                 {addingLabel ? <Loader2 className="h-3 w-3 animate-spin" /> : "+"}
+              </Button>
+            </form>
+          </div>
+
+          {/* Notes / Activity */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Notizen &amp; Aktivität
+            </Label>
+            <div className="space-y-2 max-h-64 overflow-y-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
+              {notesLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                </div>
+              ) : notes.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-3">Noch keine Notizen vorhanden.</p>
+              ) : (
+                notes.map((note) => (
+                  <div key={note.id} className="group relative rounded-md bg-gray-50 p-3 dark:bg-gray-900">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                            {note.author.name}
+                          </span>
+                          <span className="text-xs text-gray-400">{formatDateTime(note.createdAt)}</span>
+                        </div>
+                        <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
+                          {note.content}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteNote(note.id)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-gray-400 hover:text-red-500"
+                        title="Notiz löschen"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <form onSubmit={handleAddNote} className="flex gap-2 mt-1">
+              <Input
+                placeholder="Notiz hinzufügen..."
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                className="flex-1"
+              />
+              <Button type="submit" size="sm" variant="outline" disabled={addingNote || !newNoteContent.trim()}>
+                {addingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               </Button>
             </form>
           </div>

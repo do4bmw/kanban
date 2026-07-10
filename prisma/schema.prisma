@@ -31,6 +31,7 @@ model User {
   projectMemberships ProjectMember[]
   assignedCards      Card[]          @relation("CardAssignee")
   invitations        Invitation[]
+  cardNotes          CardNote[]
 }
 
 model Organization {
@@ -114,6 +115,18 @@ model Card {
   assignee   User?  @relation("CardAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   labels CardLabel[]
+  notes  CardNote[]
+}
+
+model CardNote {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+
+  cardId   String
+  card     Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 }
 
 model CardLabel {
