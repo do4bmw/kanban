@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Archive,
   Calendar,
   MoreVertical,
   Plus,
@@ -42,6 +43,7 @@ import {
   Palette,
   UserPlus,
   Users,
+  Zap,
 } from "lucide-react"
 
 const COLUMN_COLORS = [
@@ -69,10 +71,19 @@ interface CardData {
   description: string | null
   order: number
   dueDate: string | null
+  archived: boolean
+  priority: string
   columnId: string
   assigneeId: string | null
   assignee: { id: string; name: string; email: string } | null
   labels: CardLabel[]
+}
+
+const PRIORITY_META: Record<string, { label: string; color: string }> = {
+  LOW:    { label: "Niedrig", color: "#22c55e" },
+  MEDIUM: { label: "Mittel",  color: "#eab308" },
+  HIGH:   { label: "Hoch",    color: "#f97316" },
+  URGENT: { label: "Dringend",color: "#ef4444" },
 }
 
 interface ColumnData {
@@ -134,6 +145,9 @@ export default function ProjectPage({ params }: ProjectPageProps) {
   // Rename column state
   const [renamingColumnId, setRenamingColumnId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
+
+  // Archive filter
+  const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
     fetchProject()
@@ -390,6 +404,12 @@ export default function ProjectPage({ params }: ProjectPageProps) {
     setSelectedCard(null)
   }
 
+  const columnsWithCount = columns.map((col) => ({
+    ...col,
+    visibleCount: col.cards.filter((c) => showArchived ? c.archived : !c.archived).length,
+    archivedCount: col.cards.filter((c) => c.archived).length,
+  }))
+
   function handleCardDelete(cardId: string) {
     setColumns((cols) =>
       cols.map((c) => ({
@@ -429,6 +449,15 @@ export default function ProjectPage({ params }: ProjectPageProps) {
             Nur Ansicht
           </Badge>
         )}
+        <Button
+          variant={showArchived ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowArchived((v) => !v)}
+          className="flex items-center gap-1.5"
+        >
+          <Archive className="h-4 w-4" />
+          {showArchived ? "Archiv ausblenden" : "Archiv"}
+        </Button>
         {canManage && (
           <Button
             variant="outline"
@@ -461,7 +490,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
       <div className="flex-1 overflow-x-auto">
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="flex h-full gap-4 p-6" style={{ minWidth: "max-content" }}>
-            {columns.map((column) => (
+            {columnsWithCount.map((column) => (
               <div
                 key={column.id}
                 className="flex w-72 shrink-0 flex-col rounded-xl bg-gray-100 dark:bg-gray-900"
@@ -494,7 +523,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                       >
                         {column.name}
                         <span className="ml-2 rounded-full bg-white/20 px-1.5 py-0.5 text-xs font-medium">
-                          {column.cards.length}
+                          {column.visibleCount}
                         </span>
                       </button>
                     )}
@@ -557,7 +586,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                       }`}
                       style={{ minHeight: "2rem" }}
                     >
-                      {column.cards.map((card, index) => (
+                      {column.cards.filter((card) => showArchived ? card.archived : !card.archived).map((card, index) => (
                         <Draggable key={card.id} draggableId={card.id} index={index}>
                           {(provided, snapshot) => (
                             <div
@@ -569,9 +598,18 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                               }`}
                               onClick={() => setSelectedCard(card)}
                             >
-                              {/* Labels */}
-                              {card.labels.length > 0 && (
+                              {/* Labels + priority row */}
+                              {(card.labels.length > 0 || (card.priority && card.priority !== "NONE")) && (
                                 <div className="mb-2 flex flex-wrap gap-1">
+                                  {card.priority && card.priority !== "NONE" && (
+                                    <span
+                                      className="flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                                      style={{ backgroundColor: PRIORITY_META[card.priority]?.color }}
+                                    >
+                                      <Zap className="h-2.5 w-2.5" />
+                                      {PRIORITY_META[card.priority]?.label}
+                                    </span>
+                                  )}
                                   {card.labels.map((label) => (
                                     <span
                                       key={label.id}
@@ -590,6 +628,11 @@ export default function ProjectPage({ params }: ProjectPageProps) {
 
                               {/* Card meta */}
                               <div className="mt-2 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                                {card.archived && (
+                                  <span className="flex items-center gap-1 text-amber-500">
+                                    <Archive className="h-3 w-3" />
+                                  </span>
+                                )}
                                 {card.dueDate && (
                                   <span className="flex items-center gap-1">
                                     <Calendar className="h-3 w-3" />

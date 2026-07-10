@@ -3,7 +3,8 @@ import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { canEditCards, canDeleteCards } from "@/lib/permissions"
 import { getProjectAccess } from "@/lib/project-access"
-import { OrgRole } from "@prisma/client"
+import { logActivity } from "@/lib/activity"
+import { OrgRole, Priority } from "@prisma/client"
 
 async function getCardWithAccess(cardId: string, userId: string) {
   const card = await prisma.card.findUnique({
@@ -22,6 +23,8 @@ async function getCardWithAccess(cardId: string, userId: string) {
 function canDeleteCard(card: { createdById: string | null }, userId: string, role: OrgRole): boolean {
   return canDeleteCards(role) || card.createdById === userId
 }
+
+const VALID_PRIORITIES = Object.values(Priority)
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ cardId: string }> }) {
   const session = await getServerSession(authOptions)
@@ -53,7 +56,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ca
 
   try {
     const body = await req.json()
-    const { title, description, dueDate, assigneeId, columnId, order } = body
+    const { title, description, dueDate, assigneeId, columnId, order, archived, priority } = body
+
+    if (priority !== undefined && !VALID_PRIORITIES.includes(priority)) {
+      return NextResponse.json({ error: "Invalid priority" }, { status: 400 })
+    }
 
     const updated = await prisma.card.update({
       where: { id: cardId },
@@ -64,12 +71,49 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ca
         ...(assigneeId !== undefined && { assigneeId: assigneeId || null }),
         ...(columnId !== undefined && { columnId }),
         ...(order !== undefined && { order }),
+        ...(archived !== undefined && { archived }),
+        ...(priority !== undefined && { priority }),
       },
       include: {
         labels: true,
         assignee: { select: { id: true, name: true, email: true } },
       },
     })
+
+    // Log activities
+    if (title !== undefined && title !== card.title) {
+      await logActivity(cardId, "EDITED", userId, { field: "title", from: card.title, to: title })
+    }
+    if (description !== undefined && description !== card.description) {
+      await logActivity(cardId, "EDITED", userId, { field: "description" })
+    }
+    if (dueDate !== undefined) {
+      const newDate = dueDate ? new Date(dueDate).toISOString() : null
+      const oldDate = card.dueDate ? card.dueDate.toISOString() : null
+      if (newDate !== oldDate) {
+        await logActivity(cardId, dueDate ? "DUE_DATE_SET" : "DUE_DATE_CLEARED", userId, {
+          date: dueDate || null,
+        })
+      }
+    }
+    if (assigneeId !== undefined) {
+      const newAssignee = assigneeId || null
+      if (newAssignee !== card.assigneeId) {
+        await logActivity(cardId, newAssignee ? "ASSIGNED" : "UNASSIGNED", userId, {
+          assigneeId: newAssignee,
+        })
+      }
+    }
+    if (columnId !== undefined && columnId !== card.column.projectId) {
+      await logActivity(cardId, "MOVED", userId, { columnId })
+    }
+    if (archived !== undefined && archived !== card.archived) {
+      await logActivity(cardId, archived ? "ARCHIVED" : "UNARCHIVED", userId)
+    }
+    if (priority !== undefined && priority !== card.priority) {
+      await logActivity(cardId, "PRIORITY_CHANGED", userId, { from: card.priority, to: priority })
+    }
+
     return NextResponse.json(updated)
   } catch (err) {
     console.error(err)
