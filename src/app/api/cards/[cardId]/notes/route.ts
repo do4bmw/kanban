@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getProjectAccess } from "@/lib/project-access"
+import { logActivity } from "@/lib/activity"
 
 async function getCardWithAccess(cardId: string, userId: string) {
   const card = await prisma.card.findUnique({
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ car
       data: { content: content.trim(), cardId, authorId: userId },
       include: { author: { select: { id: true, name: true, email: true } } },
     })
+    await logActivity(cardId, "NOTE_ADDED", userId)
     return NextResponse.json(note, { status: 201 })
   } catch (err) {
     console.error(err)

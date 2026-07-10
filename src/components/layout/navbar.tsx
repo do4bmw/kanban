@@ -3,7 +3,8 @@
 import Link from "next/link"
 import { useSession, signOut } from "next-auth/react"
 import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -13,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LayoutDashboard, LogOut, Shield, Sun, Moon } from "lucide-react"
+import { LayoutDashboard, LogOut, Search, Shield, Sun, Moon } from "lucide-react"
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME || "Kanban"
 const logoUrl = process.env.NEXT_PUBLIC_LOGO_URL || ""
@@ -24,6 +25,9 @@ export function Navbar() {
   const { resolvedTheme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  const router = useRouter()
+  const [searchQuery, setSearchQuery] = useState("")
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const initials = user?.name
     ? user.name
@@ -53,6 +57,28 @@ export function Navbar() {
             Dashboard
           </Link>
         </div>
+
+        {/* Search bar */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (searchQuery.trim().length >= 2) {
+              router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`)
+              searchRef.current?.blur()
+            }
+          }}
+          className="relative hidden md:block"
+        >
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            ref={searchRef}
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Karten suchen..."
+            className="h-9 w-56 rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-indigo-600 dark:focus:bg-gray-800"
+          />
+        </form>
 
         <div className="flex items-center gap-2">
           {mounted && (

@@ -18,6 +18,30 @@ enum OrgRole {
   VIEWER
 }
 
+enum Priority {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ActivityType {
+  CREATED
+  MOVED
+  EDITED
+  ASSIGNED
+  UNASSIGNED
+  DUE_DATE_SET
+  DUE_DATE_CLEARED
+  ARCHIVED
+  UNARCHIVED
+  LABEL_ADDED
+  LABEL_REMOVED
+  NOTE_ADDED
+  PRIORITY_CHANGED
+}
+
 model User {
   id        String     @id @default(cuid())
   email     String     @unique
@@ -33,6 +57,7 @@ model User {
   createdCards       Card[]          @relation("CardCreator")
   invitations        Invitation[]
   cardNotes          CardNote[]
+  cardActivities     CardActivity[]
 }
 
 model Organization {
@@ -102,13 +127,16 @@ model Column {
 }
 
 model Card {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  order       Int
-  dueDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  title           String
+  description     String?
+  order           Int
+  dueDate         DateTime?
+  archived        Boolean   @default(false)
+  priority        Priority  @default(NONE)
+  reminderSentAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   columnId   String
   column     Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
@@ -117,8 +145,21 @@ model Card {
   createdById String?
   createdBy   User?  @relation("CardCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
-  labels CardLabel[]
-  notes  CardNote[]
+  labels     CardLabel[]
+  notes      CardNote[]
+  activities CardActivity[]
+}
+
+model CardActivity {
+  id        String       @id @default(cuid())
+  type      ActivityType
+  data      Json?
+  createdAt DateTime     @default(now())
+
+  cardId String
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  userId String?
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
 }
 
 model CardNote {

@@ -13,7 +13,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Calendar, ChevronDown, Loader2, MessageSquare, Send, Tag, Trash2, User, X } from "lucide-react"
+import {
+  Archive,
+  ArchiveRestore,
+  Calendar,
+  ChevronDown,
+  Clock,
+  Loader2,
+  MessageSquare,
+  Send,
+  Tag,
+  Trash2,
+  User,
+  X,
+  Zap,
+} from "lucide-react"
 
 interface CardLabel {
   id: string
@@ -35,12 +49,22 @@ interface CardNote {
   author: { id: string; name: string; email: string }
 }
 
+interface CardActivity {
+  id: string
+  type: string
+  data: Record<string, unknown> | null
+  createdAt: string
+  user: { id: string; name: string } | null
+}
+
 interface CardData {
   id: string
   title: string
   description: string | null
   order: number
   dueDate: string | null
+  archived: boolean
+  priority: string
   columnId: string
   assigneeId: string | null
   assignee: { id: string; name: string; email: string } | null
@@ -62,6 +86,43 @@ interface CardDetailProps {
   onDelete: (cardId: string) => void
 }
 
+const PRIORITIES = [
+  { value: "NONE", label: "Keine", color: "#9ca3af" },
+  { value: "LOW", label: "Niedrig", color: "#22c55e" },
+  { value: "MEDIUM", label: "Mittel", color: "#eab308" },
+  { value: "HIGH", label: "Hoch", color: "#f97316" },
+  { value: "URGENT", label: "Dringend", color: "#ef4444" },
+]
+
+function getPriority(value: string) {
+  return PRIORITIES.find((p) => p.value === value) ?? PRIORITIES[0]
+}
+
+function activityLabel(activity: CardActivity): string {
+  const who = activity.user?.name ?? "Jemand"
+  const d = activity.data as any
+  switch (activity.type) {
+    case "CREATED": return `${who} hat die Karte erstellt`
+    case "EDITED":
+      if (d?.field === "title") return `${who} hat den Titel geändert`
+      if (d?.field === "description") return `${who} hat die Beschreibung geändert`
+      return `${who} hat die Karte bearbeitet`
+    case "MOVED": return `${who} hat die Karte verschoben`
+    case "ASSIGNED": return `${who} hat die Karte zugewiesen`
+    case "UNASSIGNED": return `${who} hat die Zuweisung entfernt`
+    case "DUE_DATE_SET": return `${who} hat ein Fälligkeitsdatum gesetzt`
+    case "DUE_DATE_CLEARED": return `${who} hat das Fälligkeitsdatum entfernt`
+    case "ARCHIVED": return `${who} hat die Karte archiviert`
+    case "UNARCHIVED": return `${who} hat die Karte aus dem Archiv geholt`
+    case "LABEL_ADDED": return `${who} hat ein Label hinzugefügt`
+    case "LABEL_REMOVED": return `${who} hat ein Label entfernt`
+    case "NOTE_ADDED": return `${who} hat eine Notiz hinzugefügt`
+    case "PRIORITY_CHANGED":
+      return `${who} hat die Priorität auf „${getPriority(d?.to).label}" gesetzt`
+    default: return `${who} hat eine Aktion ausgeführt`
+  }
+}
+
 export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, onDelete }: CardDetailProps) {
   const [title, setTitle] = useState(card.title)
   const [description, setDescription] = useState(card.description || "")
@@ -69,6 +130,7 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
     card.dueDate ? new Date(card.dueDate).toISOString().split("T")[0] : ""
   )
   const [assigneeId, setAssigneeId] = useState(card.assigneeId || "")
+  const [priority, setPriority] = useState(card.priority || "NONE")
   const [labels, setLabels] = useState<CardLabel[]>(card.labels)
   const [members, setMembers] = useState<Member[]>([])
   const [templates, setTemplates] = useState<LabelTemplate[]>([])
@@ -76,13 +138,19 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   const labelDropdownRef = useRef<HTMLDivElement>(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [activeTab, setActiveTab] = useState<"notes" | "activity">("notes")
 
   // Notes state
   const [notes, setNotes] = useState<CardNote[]>([])
   const [notesLoading, setNotesLoading] = useState(true)
   const [newNoteContent, setNewNoteContent] = useState("")
   const [addingNote, setAddingNote] = useState(false)
+
+  // Activity state
+  const [activities, setActivities] = useState<CardActivity[]>([])
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
 
   useEffect(() => {
     fetch("/api/label-templates")
@@ -99,6 +167,15 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   }, [card.id])
 
   useEffect(() => {
+    if (activeTab !== "activity") return
+    setActivitiesLoading(true)
+    fetch(`/api/cards/${card.id}/activity`)
+      .then(async (r) => { if (r.ok) { const d = await r.json(); if (Array.isArray(d)) setActivities(d) } })
+      .catch(() => {})
+      .finally(() => setActivitiesLoading(false))
+  }, [card.id, activeTab])
+
+  useEffect(() => {
     fetch(`/api/orgs/${orgId}/members`)
       .then(async (r) => {
         if (r.ok) {
@@ -112,7 +189,6 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
       .catch(() => {})
   }, [orgId, projectId])
 
-  // Close label dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (labelDropdownRef.current && !labelDropdownRef.current.contains(e.target as Node)) {
@@ -135,17 +211,38 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
           description: description.trim() || null,
           dueDate: dueDate || null,
           assigneeId: assigneeId || null,
+          priority,
         }),
       })
       if (!res.ok) throw new Error()
       const updated = await res.json()
-      onUpdate({ ...updated, labels })
+      onUpdate({ ...updated, labels, archived: card.archived })
       toast.success("Karte gespeichert.")
       onClose()
     } catch {
       toast.error("Karte konnte nicht gespeichert werden.")
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleArchiveToggle() {
+    setArchiving(true)
+    try {
+      const res = await fetch(`/api/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: !card.archived }),
+      })
+      if (!res.ok) throw new Error()
+      const updated = await res.json()
+      onUpdate({ ...updated, labels })
+      toast.success(card.archived ? "Karte wiederhergestellt." : "Karte archiviert.")
+      onClose()
+    } catch {
+      toast.error("Fehler beim Archivieren.")
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -167,7 +264,6 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   async function handleToggleLabel(tpl: LabelTemplate) {
     const existing = labels.find((l) => l.name === tpl.name && l.color === tpl.color)
     if (existing) {
-      // remove
       try {
         const res = await fetch(`/api/cards/${card.id}/labels`, {
           method: "DELETE",
@@ -180,7 +276,6 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
         toast.error("Label konnte nicht entfernt werden.")
       }
     } else {
-      // add
       try {
         const res = await fetch(`/api/cards/${card.id}/labels`, {
           method: "POST",
@@ -248,11 +343,20 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
     })
   }
 
+  const currentPriority = getPriority(priority)
+
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Karte bearbeiten</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            Karte bearbeiten
+            {card.archived && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Archiviert
+              </span>
+            )}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5 py-2">
@@ -316,6 +420,35 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
             </div>
           </div>
 
+          {/* Priority */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1">
+              <Zap className="h-3.5 w-3.5" />
+              Priorität
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {PRIORITIES.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setPriority(p.value)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                    priority === p.value
+                      ? "border-transparent text-white shadow-sm"
+                      : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400"
+                  }`}
+                  style={priority === p.value ? { backgroundColor: p.color, borderColor: p.color } : {}}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: priority === p.value ? "rgba(255,255,255,0.6)" : p.color }}
+                  />
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Labels */}
           <div className="space-y-2">
             <Label className="flex items-center gap-1">
@@ -323,7 +456,6 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
               Labels
             </Label>
 
-            {/* Applied labels */}
             {labels.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {labels.map((label) => (
@@ -344,7 +476,6 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
               </div>
             )}
 
-            {/* Template dropdown */}
             {templates.length > 0 && (
               <div className="relative" ref={labelDropdownRef}>
                 <button
@@ -367,10 +498,7 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
                             onClick={() => handleToggleLabel(tpl)}
                             className={`flex w-full items-center gap-2.5 rounded px-2.5 py-1.5 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 ${active ? "font-medium" : ""}`}
                           >
-                            <span
-                              className="h-3 w-3 shrink-0 rounded-full"
-                              style={{ backgroundColor: tpl.color }}
-                            />
+                            <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: tpl.color }} />
                             <span className="flex-1 text-left text-gray-800 dark:text-gray-200">{tpl.name}</span>
                             {active && <span className="text-xs text-indigo-600 dark:text-indigo-400">✓</span>}
                           </button>
@@ -383,82 +511,154 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
             )}
           </div>
 
-          {/* Notes / Activity */}
+          {/* Notes & Activity tabs */}
           <div className="space-y-2">
-            <Label className="flex items-center gap-1">
-              <MessageSquare className="h-3.5 w-3.5" />
-              Notizen &amp; Aktivität
-            </Label>
-            <div className="space-y-2 max-h-64 overflow-y-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
-              {notesLoading ? (
-                <div className="flex justify-center py-4">
-                  <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                </div>
-              ) : notes.length === 0 ? (
-                <p className="text-center text-sm text-gray-400 py-3">Noch keine Notizen vorhanden.</p>
-              ) : (
-                notes.map((note) => (
-                  <div key={note.id} className="group relative rounded-md bg-gray-50 p-3 dark:bg-gray-900">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                            {note.author.name}
-                          </span>
-                          <span className="text-xs text-gray-400">{formatDateTime(note.createdAt)}</span>
-                        </div>
-                        <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
-                          {note.content}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteNote(note.id)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-gray-400 hover:text-red-500"
-                        title="Notiz löschen"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className="flex gap-0 rounded-md border border-gray-200 p-0.5 dark:border-gray-800 w-fit">
+              <button
+                type="button"
+                onClick={() => setActiveTab("notes")}
+                className={`flex items-center gap-1.5 rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  activeTab === "notes"
+                    ? "bg-indigo-600 text-white"
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                <MessageSquare className="h-3 w-3" />
+                Notizen{notes.length > 0 && ` (${notes.length})`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("activity")}
+                className={`flex items-center gap-1.5 rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  activeTab === "activity"
+                    ? "bg-indigo-600 text-white"
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                <Clock className="h-3 w-3" />
+                Aktivität
+              </button>
             </div>
-            <form onSubmit={handleAddNote} className="flex gap-2 mt-1">
-              <Input
-                placeholder="Notiz hinzufügen..."
-                value={newNoteContent}
-                onChange={(e) => setNewNoteContent(e.target.value)}
-                className="flex-1"
-              />
-              <Button type="submit" size="sm" variant="outline" disabled={addingNote || !newNoteContent.trim()}>
-                {addingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              </Button>
-            </form>
+
+            {activeTab === "notes" && (
+              <>
+                <div className="space-y-2 max-h-64 overflow-y-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
+                  {notesLoading ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                    </div>
+                  ) : notes.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400 py-3">Noch keine Notizen vorhanden.</p>
+                  ) : (
+                    notes.map((note) => (
+                      <div key={note.id} className="group relative rounded-md bg-gray-50 p-3 dark:bg-gray-900">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                {note.author.name}
+                              </span>
+                              <span className="text-xs text-gray-400">{formatDateTime(note.createdAt)}</span>
+                            </div>
+                            <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
+                              {note.content}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteNote(note.id)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-gray-400 hover:text-red-500"
+                            title="Notiz löschen"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <form onSubmit={handleAddNote} className="flex gap-2 mt-1">
+                  <Input
+                    placeholder="Notiz hinzufügen..."
+                    value={newNoteContent}
+                    onChange={(e) => setNewNoteContent(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button type="submit" size="sm" variant="outline" disabled={addingNote || !newNoteContent.trim()}>
+                    {addingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  </Button>
+                </form>
+              </>
+            )}
+
+            {activeTab === "activity" && (
+              <div className="max-h-64 overflow-y-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
+                {activitiesLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  </div>
+                ) : activities.length === 0 ? (
+                  <p className="text-center text-sm text-gray-400 py-3">Noch keine Aktivitäten aufgezeichnet.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {[...activities].reverse().map((a) => (
+                      <div key={a.id} className="flex items-start gap-2 rounded px-2 py-1.5 text-sm">
+                        <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-gray-700 dark:text-gray-300">{activityLabel(a)}</span>
+                          <span className="ml-2 text-xs text-gray-400">{formatDateTime(a.createdAt)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Actions */}
         <div className="flex items-center justify-between border-t border-gray-200 pt-4 dark:border-gray-800">
-          {!confirmDelete ? (
-            <Button
-              variant="ghost"
-              className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-              Löschen
-            </Button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-red-600 dark:text-red-400">Wirklich löschen?</span>
-              <Button size="sm" variant="destructive" onClick={handleDelete} disabled={deleting}>
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Ja, löschen"}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setConfirmDelete(false)}>
-                Abbrechen
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {!confirmDelete ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Löschen
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400"
+                  onClick={handleArchiveToggle}
+                  disabled={archiving}
+                >
+                  {archiving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : card.archived ? (
+                    <ArchiveRestore className="h-4 w-4" />
+                  ) : (
+                    <Archive className="h-4 w-4" />
+                  )}
+                  {card.archived ? "Wiederherstellen" : "Archivieren"}
+                </Button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-red-600 dark:text-red-400">Wirklich löschen?</span>
+                <Button size="sm" variant="destructive" onClick={handleDelete} disabled={deleting}>
+                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Ja, löschen"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setConfirmDelete(false)}>
+                  Abbrechen
+                </Button>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
               Abbrechen

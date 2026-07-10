@@ -3,6 +3,7 @@ import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { canEditCards } from "@/lib/permissions"
 import { getAccessForColumn } from "@/lib/project-access"
+import { logActivity } from "@/lib/activity"
 import { OrgRole } from "@prisma/client"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ columnId: string }> }) {
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
       },
     })
 
+    await logActivity(card.id, "CREATED", userId)
     return NextResponse.json(card, { status: 201 })
   } catch (err) {
     console.error(err)
