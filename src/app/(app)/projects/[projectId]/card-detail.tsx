@@ -1,12 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
@@ -14,12 +13,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Calendar, Loader2, MessageSquare, Send, Tag, Trash2, User, X } from "lucide-react"
+import { Calendar, ChevronDown, Loader2, MessageSquare, Send, Tag, Trash2, User, X } from "lucide-react"
 
 interface CardLabel {
   id: string
   name: string
   color: string
+}
+
+interface LabelTemplate {
+  id: string
+  name: string
+  color: string
+  order: number
 }
 
 interface CardNote {
@@ -56,12 +62,6 @@ interface CardDetailProps {
   onDelete: (cardId: string) => void
 }
 
-const LABEL_COLORS = [
-  "#ef4444", "#f97316", "#eab308", "#22c55e",
-  "#14b8a6", "#3b82f6", "#6366f1", "#a855f7",
-  "#ec4899", "#6b7280",
-]
-
 export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, onDelete }: CardDetailProps) {
   const [title, setTitle] = useState(card.title)
   const [description, setDescription] = useState(card.description || "")
@@ -71,14 +71,12 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   const [assigneeId, setAssigneeId] = useState(card.assigneeId || "")
   const [labels, setLabels] = useState<CardLabel[]>(card.labels)
   const [members, setMembers] = useState<Member[]>([])
+  const [templates, setTemplates] = useState<LabelTemplate[]>([])
+  const [labelDropdownOpen, setLabelDropdownOpen] = useState(false)
+  const labelDropdownRef = useRef<HTMLDivElement>(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  // Label state
-  const [newLabelName, setNewLabelName] = useState("")
-  const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[5])
-  const [addingLabel, setAddingLabel] = useState(false)
 
   // Notes state
   const [notes, setNotes] = useState<CardNote[]>([])
@@ -87,14 +85,15 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   const [addingNote, setAddingNote] = useState(false)
 
   useEffect(() => {
+    fetch("/api/label-templates")
+      .then(async (r) => { if (r.ok) { const d = await r.json(); if (Array.isArray(d)) setTemplates(d) } })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     setNotesLoading(true)
     fetch(`/api/cards/${card.id}/notes`)
-      .then(async (r) => {
-        if (r.ok) {
-          const data = await r.json()
-          if (Array.isArray(data)) setNotes(data)
-        }
-      })
+      .then(async (r) => { if (r.ok) { const d = await r.json(); if (Array.isArray(d)) setNotes(d) } })
       .catch(() => {})
       .finally(() => setNotesLoading(false))
   }, [card.id])
@@ -106,16 +105,23 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
           const data = await r.json()
           if (Array.isArray(data)) setMembers(data)
         } else {
-          // Fallback for project-only members who have no org membership
           const r2 = await fetch(`/api/projects/${projectId}/members`)
-          if (r2.ok) {
-            const data = await r2.json()
-            if (Array.isArray(data)) setMembers(data)
-          }
+          if (r2.ok) { const data = await r2.json(); if (Array.isArray(data)) setMembers(data) }
         }
       })
       .catch(() => {})
   }, [orgId, projectId])
+
+  // Close label dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (labelDropdownRef.current && !labelDropdownRef.current.contains(e.target as Node)) {
+        setLabelDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
 
   async function handleSave() {
     if (!title.trim()) { toast.error("Titel darf nicht leer sein."); return }
@@ -131,7 +137,7 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
           assigneeId: assigneeId || null,
         }),
       })
-      if (!res.ok) throw new Error("Fehler")
+      if (!res.ok) throw new Error()
       const updated = await res.json()
       onUpdate({ ...updated, labels })
       toast.success("Karte gespeichert.")
@@ -147,7 +153,7 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
     setDeleting(true)
     try {
       const res = await fetch(`/api/cards/${card.id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("Fehler")
+      if (!res.ok) throw new Error()
       onDelete(card.id)
       toast.success("Karte gelöscht.")
       onClose()
@@ -158,24 +164,49 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
     }
   }
 
-  async function handleAddLabel(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newLabelName.trim()) return
-    setAddingLabel(true)
+  async function handleToggleLabel(tpl: LabelTemplate) {
+    const existing = labels.find((l) => l.name === tpl.name && l.color === tpl.color)
+    if (existing) {
+      // remove
+      try {
+        const res = await fetch(`/api/cards/${card.id}/labels`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ labelId: existing.id }),
+        })
+        if (!res.ok) throw new Error()
+        setLabels((prev) => prev.filter((l) => l.id !== existing.id))
+      } catch {
+        toast.error("Label konnte nicht entfernt werden.")
+      }
+    } else {
+      // add
+      try {
+        const res = await fetch(`/api/cards/${card.id}/labels`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: tpl.name, color: tpl.color }),
+        })
+        if (!res.ok) throw new Error()
+        const label = await res.json()
+        setLabels((prev) => [...prev, label])
+      } catch {
+        toast.error("Label konnte nicht hinzugefügt werden.")
+      }
+    }
+  }
+
+  async function handleRemoveLabel(labelId: string) {
     try {
       const res = await fetch(`/api/cards/${card.id}/labels`, {
-        method: "POST",
+        method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newLabelName.trim(), color: newLabelColor }),
+        body: JSON.stringify({ labelId }),
       })
-      if (!res.ok) throw new Error("Fehler")
-      const label = await res.json()
-      setLabels((prev) => [...prev, label])
-      setNewLabelName("")
+      if (!res.ok) throw new Error()
+      setLabels((prev) => prev.filter((l) => l.id !== labelId))
     } catch {
-      toast.error("Label konnte nicht hinzugefügt werden.")
-    } finally {
-      setAddingLabel(false)
+      toast.error("Label konnte nicht entfernt werden.")
     }
   }
 
@@ -211,25 +242,10 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   }
 
   function formatDateTime(iso: string) {
-    const d = new Date(iso)
-    return d.toLocaleString("de-DE", {
+    return new Date(iso).toLocaleString("de-DE", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     })
-  }
-
-  async function handleRemoveLabel(labelId: string) {
-    try {
-      const res = await fetch(`/api/cards/${card.id}/labels`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ labelId }),
-      })
-      if (!res.ok) throw new Error("Fehler")
-      setLabels((prev) => prev.filter((l) => l.id !== labelId))
-    } catch {
-      toast.error("Label konnte nicht entfernt werden.")
-    }
   }
 
   return (
@@ -306,45 +322,65 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
               <Tag className="h-3.5 w-3.5" />
               Labels
             </Label>
-            <div className="flex flex-wrap gap-1.5">
-              {labels.map((label) => (
-                <span
-                  key={label.id}
-                  className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-                  style={{ backgroundColor: label.color }}
-                >
-                  {label.name}
-                  <button
-                    onClick={() => handleRemoveLabel(label.id)}
-                    className="ml-0.5 rounded-full hover:opacity-70"
+
+            {/* Applied labels */}
+            {labels.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {labels.map((label) => (
+                  <span
+                    key={label.id}
+                    className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
+                    style={{ backgroundColor: label.color }}
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-            <form onSubmit={handleAddLabel} className="flex gap-2 mt-1">
-              <Input
-                placeholder="Label hinzufügen..."
-                value={newLabelName}
-                onChange={(e) => setNewLabelName(e.target.value)}
-                className="flex-1"
-              />
-              <div className="flex gap-1">
-                {LABEL_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setNewLabelColor(color)}
-                    className={`h-6 w-6 rounded-full transition-transform ${newLabelColor === color ? "scale-125 ring-2 ring-offset-1 ring-gray-400" : ""}`}
-                    style={{ backgroundColor: color }}
-                  />
+                    {label.name}
+                    <button
+                      onClick={() => handleRemoveLabel(label.id)}
+                      className="ml-0.5 rounded-full hover:opacity-70"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
                 ))}
               </div>
-              <Button type="submit" size="sm" variant="outline" disabled={addingLabel || !newLabelName.trim()}>
-                {addingLabel ? <Loader2 className="h-3 w-3 animate-spin" /> : "+"}
-              </Button>
-            </form>
+            )}
+
+            {/* Template dropdown */}
+            {templates.length > 0 && (
+              <div className="relative" ref={labelDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setLabelDropdownOpen((o) => !o)}
+                  className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  Label hinzufügen
+                  <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                </button>
+                {labelDropdownOpen && (
+                  <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900">
+                    <div className="p-1">
+                      {templates.map((tpl) => {
+                        const active = labels.some((l) => l.name === tpl.name && l.color === tpl.color)
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => handleToggleLabel(tpl)}
+                            className={`flex w-full items-center gap-2.5 rounded px-2.5 py-1.5 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 ${active ? "font-medium" : ""}`}
+                          >
+                            <span
+                              className="h-3 w-3 shrink-0 rounded-full"
+                              style={{ backgroundColor: tpl.color }}
+                            />
+                            <span className="flex-1 text-left text-gray-800 dark:text-gray-200">{tpl.name}</span>
+                            {active && <span className="text-xs text-indigo-600 dark:text-indigo-400">✓</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Notes / Activity */}

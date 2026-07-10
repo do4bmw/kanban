@@ -138,6 +138,13 @@ model CardLabel {
   card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
 }
 
+model LabelTemplate {
+  id    String @id @default(cuid())
+  name  String
+  color String @default("#6366f1")
+  order Int    @default(0)
+}
+
 model Invitation {
   id        String    @id @default(cuid())
   email     String

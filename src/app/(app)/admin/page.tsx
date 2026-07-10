@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2, Mail, Send, UserPlus } from "lucide-react"
+import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2, Mail, Send, UserPlus, Tag, Plus } from "lucide-react"
 
 interface AdminUser {
   id: string
@@ -32,7 +32,20 @@ interface Stats {
   cards: number
 }
 
-type Tab = "overview" | "users" | "orgs" | "email"
+interface LabelTemplate {
+  id: string
+  name: string
+  color: string
+  order: number
+}
+
+const LABEL_COLORS = [
+  "#ef4444", "#f97316", "#eab308", "#22c55e",
+  "#14b8a6", "#3b82f6", "#6366f1", "#a855f7",
+  "#ec4899", "#6b7280",
+]
+
+type Tab = "overview" | "users" | "orgs" | "email" | "labels"
 
 export default function AdminPage() {
   const { data: session, status } = useSession()
@@ -48,6 +61,11 @@ export default function AdminPage() {
   const [sendingTest, setSendingTest] = useState(false)
   const [inviteTo, setInviteTo] = useState("")
   const [sendingInvite, setSendingInvite] = useState(false)
+  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([])
+  const [newLabelName, setNewLabelName] = useState("")
+  const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[3])
+  const [addingLabel, setAddingLabel] = useState(false)
+  const [deletingLabelId, setDeletingLabelId] = useState<string | null>(null)
 
   const currentUser = session?.user as any
 
@@ -63,10 +81,11 @@ export default function AdminPage() {
   async function fetchAll() {
     setLoading(true)
     try {
-      const [statsRes, usersRes, orgsRes] = await Promise.all([
+      const [statsRes, usersRes, orgsRes, labelsRes] = await Promise.all([
         fetch("/api/admin/stats"),
         fetch("/api/admin/users"),
         fetch("/api/admin/orgs"),
+        fetch("/api/admin/label-templates"),
       ])
       if (!statsRes.ok || !usersRes.ok || !orgsRes.ok) {
         router.replace("/dashboard")
@@ -80,10 +99,49 @@ export default function AdminPage() {
       setStats(statsData)
       setUsers(usersData)
       setOrgs(orgsData)
+      if (labelsRes.ok) {
+        const labelsData = await labelsRes.json()
+        if (Array.isArray(labelsData)) setLabelTemplates(labelsData)
+      }
     } catch {
       toast.error("Daten konnten nicht geladen werden.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleAddLabel(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newLabelName.trim()) return
+    setAddingLabel(true)
+    try {
+      const res = await fetch("/api/admin/label-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newLabelName.trim(), color: newLabelColor }),
+      })
+      if (!res.ok) throw new Error()
+      const tpl = await res.json()
+      setLabelTemplates((prev) => [...prev, tpl])
+      setNewLabelName("")
+    } catch {
+      toast.error("Label konnte nicht erstellt werden.")
+    } finally {
+      setAddingLabel(false)
+    }
+  }
+
+  async function handleDeleteLabel(id: string, name: string) {
+    if (!confirm(`Label "${name}" wirklich löschen?`)) return
+    setDeletingLabelId(id)
+    try {
+      const res = await fetch(`/api/admin/label-templates/${id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error()
+      setLabelTemplates((prev) => prev.filter((t) => t.id !== id))
+    } catch {
+      toast.error("Label konnte nicht gelöscht werden.")
+    } finally {
+      setDeletingLabelId(null)
     }
   }
 
@@ -204,6 +262,7 @@ export default function AdminPage() {
     { id: "overview", label: "Übersicht", icon: <LayoutDashboard className="h-4 w-4" /> },
     { id: "users", label: "Benutzer", icon: <Users className="h-4 w-4" /> },
     { id: "orgs", label: "Organisationen", icon: <Building2 className="h-4 w-4" /> },
+    { id: "labels", label: "Labels", icon: <Tag className="h-4 w-4" /> },
     { id: "email", label: "E-Mail", icon: <Mail className="h-4 w-4" /> },
   ]
 
@@ -332,6 +391,102 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Labels */}
+      {tab === "labels" && (
+        <div className="space-y-6">
+          {/* Existing templates */}
+          <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div className="border-b border-gray-200 bg-gray-50 px-6 py-3 dark:border-gray-800 dark:bg-gray-800/50">
+              <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Vorhandene Labels ({labelTemplates.length})
+              </h2>
+            </div>
+            {labelTemplates.length === 0 ? (
+              <p className="px-6 py-8 text-center text-sm text-gray-400">Noch keine Labels angelegt.</p>
+            ) : (
+              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+                {labelTemplates.map((tpl) => (
+                  <li key={tpl.id} className="flex items-center gap-4 px-6 py-3">
+                    <span
+                      className="h-4 w-4 shrink-0 rounded-full"
+                      style={{ backgroundColor: tpl.color }}
+                    />
+                    <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100">{tpl.name}</span>
+                    <span className="font-mono text-xs text-gray-400">{tpl.color}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400"
+                      onClick={() => handleDeleteLabel(tpl.id, tpl.name)}
+                      disabled={deletingLabelId === tpl.id}
+                    >
+                      {deletingLabelId === tpl.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Add new label */}
+          <div className="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex items-center gap-2">
+              <Plus className="h-5 w-5 text-indigo-600" />
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Neues Label anlegen</h2>
+            </div>
+            <form onSubmit={handleAddLabel} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="label-name">Name</Label>
+                <Input
+                  id="label-name"
+                  placeholder="z.B. Dringend"
+                  value={newLabelName}
+                  onChange={(e) => setNewLabelName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Farbe</Label>
+                <div className="flex flex-wrap gap-2">
+                  {LABEL_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => setNewLabelColor(color)}
+                      className={`h-7 w-7 rounded-full transition-transform ${newLabelColor === color ? "scale-125 ring-2 ring-offset-2 ring-gray-400" : ""}`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={newLabelColor}
+                    onChange={(e) => setNewLabelColor(e.target.value)}
+                    className="h-7 w-7 cursor-pointer rounded-full border-0 p-0"
+                    title="Eigene Farbe"
+                  />
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span
+                    className="h-4 w-4 shrink-0 rounded-full"
+                    style={{ backgroundColor: newLabelColor }}
+                  />
+                  <span className="text-xs text-gray-500">{newLabelColor}</span>
+                </div>
+              </div>
+              <Button type="submit" disabled={addingLabel || !newLabelName.trim()}>
+                {addingLabel ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Label erstellen
+              </Button>
+            </form>
+          </div>
         </div>
       )}
 
