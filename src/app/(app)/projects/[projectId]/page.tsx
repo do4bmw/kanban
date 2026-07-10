@@ -704,7 +704,7 @@ export default function ProjectPage({ params }: ProjectPageProps) {
       </div>
 
       {/* Project Members Dialog */}
-      <Dialog open={membersOpen} onOpenChange={(o) => { setMembersOpen(o); if (!o) { setInviteResult(null); setInviteEmail("") } }}>
+      <Dialog open={membersOpen} onOpenChange={(o) => { setMembersOpen(o); if (!o) { setInviteResult(null); setInviteEmail(""); setInviteDialogOpen(false) } }}>
         <DialogContent className="max-w-md">
           {!inviteDialogOpen ? (
             <>

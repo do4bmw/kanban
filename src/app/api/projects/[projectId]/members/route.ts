@@ -36,6 +36,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
 
   const { userId } = await req.json()
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 })
+  if (userId === callerId) return NextResponse.json({ error: "Cannot remove yourself" }, { status: 400 })
 
   await prisma.projectMember.deleteMany({ where: { projectId, userId } })
   return NextResponse.json({ success: true })

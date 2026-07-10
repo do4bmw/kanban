@@ -17,12 +17,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   if (invitation.usedAt) return NextResponse.json({ error: "Invitation already used" }, { status: 400 })
   if (invitation.expiresAt < new Date()) return NextResponse.json({ error: "Invitation expired" }, { status: 400 })
 
+  // Mask the email — show only the domain part so the UI can guide the user
+  // without leaking the full address to unauthenticated callers.
+  const [localPart, domain] = invitation.email.split("@")
+  const maskedEmail = `${localPart[0]}***@${domain}`
+
   return NextResponse.json({
     orgId: invitation.orgId,
     orgName: invitation.org.name,
     projectId: invitation.projectId,
     projectName: invitation.project?.name ?? null,
-    email: invitation.email,
+    email: maskedEmail,
     role: invitation.role,
   })
 }

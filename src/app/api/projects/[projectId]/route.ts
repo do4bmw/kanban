@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
 
   const access = await getProjectAccess(userId, projectId)
   if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  if (access.role === "VIEWER") return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
+  if (!["OWNER", "ADMIN"].includes(access.role)) return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
 
   try {
     const body = await req.json()

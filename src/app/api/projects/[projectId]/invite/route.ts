@@ -23,7 +23,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
 
   const body = await req.json()
   const { email, role = "MEMBER" } = body
-  if (!email) return NextResponse.json({ error: "email required" }, { status: 400 })
+  if (!email || typeof email !== "string") return NextResponse.json({ error: "email required" }, { status: 400 })
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: "Invalid email" }, { status: 400 })
+  const normalizedEmail = email.toLowerCase().trim()
 
   const validRoles = ["ADMIN", "MEMBER", "VIEWER"]
   if (!validRoles.includes(role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 })
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
 
   const invitation = await prisma.invitation.create({
     data: {
-      email,
+      email: normalizedEmail,
       role,
       orgId: project.orgId,
       projectId,
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
         setTimeout(() => reject(new Error("Mail timeout")), 20_000)
       )
       await Promise.race([
-        sendProjectInvitationEmail(email, project.name, caller?.name ?? "Jemand", inviteUrl, role),
+        sendProjectInvitationEmail(normalizedEmail, project.name, caller?.name ?? "Jemand", inviteUrl, role),
         timeout,
       ])
       emailSent = true
