@@ -5,17 +5,29 @@ function getTransporter() {
   if (!host) return null
 
   const port = parseInt(process.env.SMTP_PORT || "587", 10)
+  // SMTP_SECURE=true → implicit TLS (port 465)
+  // SMTP_SECURE=false → plain/STARTTLS
+  // default: auto-detect by port
+  const secureEnv = process.env.SMTP_SECURE
+  const secure = secureEnv !== undefined ? secureEnv === "true" : port === 465
+
   return nodemailer.createTransport({
     host,
     port,
-    secure: port === 465,
+    secure,
+    // For STARTTLS (port 587): require upgrade to TLS
+    requireTLS: !secure && port === 587,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 15_000,
+    tls: {
+      // Allow self-signed certs on internal mail servers
+      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "false",
+    },
+    connectionTimeout: 20_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 20_000,
   })
 }
 
