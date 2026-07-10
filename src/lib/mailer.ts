@@ -4,13 +4,18 @@ function getTransporter() {
   const host = process.env.SMTP_HOST
   if (!host) return null
 
+  const port = parseInt(process.env.SMTP_PORT || "587", 10)
   return nodemailer.createTransport({
     host,
-    port: parseInt(process.env.SMTP_PORT || "587", 10),
+    port,
+    secure: port === 465,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   })
 }
 

@@ -38,9 +38,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     const { mailerEnabled, sendInvitationEmail } = await import("@/lib/mailer")
     if (mailerEnabled()) {
       try {
-        const caller = await prisma.user.findUnique({ where: { id: callerId }, select: { name: true } })
-        const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
-        await sendInvitationEmail(email, org?.name ?? orgId, caller?.name ?? "Jemand", inviteUrl, role)
+        const [caller, org] = await Promise.all([
+          prisma.user.findUnique({ where: { id: callerId }, select: { name: true } }),
+          prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
+        ])
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Mail timeout")), 20_000)
+        )
+        await Promise.race([
+          sendInvitationEmail(email, org?.name ?? orgId, caller?.name ?? "Jemand", inviteUrl, role),
+          timeout,
+        ])
         emailSent = true
       } catch (mailErr) {
         console.error("[invite] Failed to send email:", mailErr)
