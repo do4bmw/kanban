@@ -27,7 +27,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     const validRoles = ["OWNER", "ADMIN", "MEMBER", "VIEWER"]
     if (!validRoles.includes(role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 })
 
+    // Reject if the invited person is already a member of the organization.
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    })
+    if (existingUser) {
+      const alreadyMember = await prisma.orgMember.findUnique({
+        where: { userId_orgId: { userId: existingUser.id, orgId } },
+      })
+      if (alreadyMember) {
+        return NextResponse.json(
+          { error: "Diese Person ist bereits Mitglied der Organisation." },
+          { status: 409 }
+        )
+      }
+    }
+
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+
+    // Clear any prior unused invitations for the same person+org so they don't
+    // pile up in the database; the freshest link is the only valid one.
+    await prisma.invitation.deleteMany({
+      where: { email: normalizedEmail, orgId, projectId: null, usedAt: null },
+    })
 
     const invitation = await prisma.invitation.create({
       data: { email: normalizedEmail, role, orgId, invitedBy: callerId, expiresAt },
@@ -44,13 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
           prisma.user.findUnique({ where: { id: callerId }, select: { name: true } }),
           prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
         ])
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Mail timeout")), 20_000)
-        )
-        await Promise.race([
-          sendInvitationEmail(normalizedEmail, org?.name ?? orgId, caller?.name ?? "Jemand", inviteUrl, role),
-          timeout,
-        ])
+        await sendInvitationEmail(normalizedEmail, org?.name ?? orgId, caller?.name ?? "Jemand", inviteUrl, role)
         emailSent = true
       } catch (mailErr) {
         console.error("[invite] Failed to send email:", mailErr)
