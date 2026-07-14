@@ -81,7 +81,7 @@ export default function SearchPage() {
 
       {!loading && query.length >= 2 && results.length === 0 && (
         <p className="text-center text-gray-500 dark:text-gray-400 py-12">
-          Keine Karten für „{query}" gefunden.
+          Keine Karten für „{query}&ldquo; gefunden.
         </p>
       )}
 
