@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2, Mail, Send, UserPlus, Tag, Plus } from "lucide-react"
+import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2, Mail, Send, UserPlus, Tag, Plus, Settings } from "lucide-react"
+import { OrgMembersDialog } from "./org-members-dialog"
 
 interface AdminUser {
   id: string
@@ -66,6 +67,7 @@ export default function AdminPage() {
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[3])
   const [addingLabel, setAddingLabel] = useState(false)
   const [deletingLabelId, setDeletingLabelId] = useState<string | null>(null)
+  const [managingOrg, setManagingOrg] = useState<{ id: string; name: string } | null>(null)
 
   const currentUser = session?.user as any
 
@@ -583,19 +585,30 @@ export default function AdminPage() {
                     {new Date(org.createdAt).toLocaleDateString("de-DE")}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-right">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400"
-                      onClick={() => handleDeleteOrg(org)}
-                      disabled={deletingId === org.id}
-                    >
-                      {deletingId === org.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setManagingOrg({ id: org.id, name: org.name })}
+                        disabled={deletingId === org.id}
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                        Mitglieder
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400"
+                        onClick={() => handleDeleteOrg(org)}
+                        disabled={deletingId === org.id}
+                      >
+                        {deletingId === org.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -603,6 +616,12 @@ export default function AdminPage() {
           </table>
         </div>
       )}
+
+      <OrgMembersDialog
+        org={managingOrg}
+        allUsers={users}
+        onClose={() => { setManagingOrg(null); fetchAll() }}
+      />
     </div>
   )
 }
