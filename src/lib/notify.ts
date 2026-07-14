@@ -1,10 +1,12 @@
 import prisma from "@/lib/prisma"
 
-// Guards against duplicate assignment emails when the same assignment is
-// submitted twice in quick succession (double-click, retried request, …).
-// Keyed by cardId:assigneeId; entries expire after the window.
-const recentlyNotified = new Map<string, number>()
-const DEDUPE_WINDOW_MS = 30_000
+// Guards against duplicate assignment emails when the SAME assignment fires
+// twice near-simultaneously (a double-submitted/raced request). One entry per
+// card holds the last-notified assignee + time. A new assignee overwrites it,
+// so reassigning back to a previous person is never blocked — only an
+// identical (card, assignee) notification within the short window is skipped.
+const recentlyNotified = new Map<string, { assigneeId: string; ts: number }>()
+const DEDUPE_WINDOW_MS = 10_000
 
 /**
  * Best-effort email notification when a card gets assigned to a user.
@@ -22,17 +24,16 @@ export async function notifyCardAssigned(opts: {
   try {
     if (opts.assigneeId === opts.assignerId) return
 
-    const key = `${opts.cardId}:${opts.assigneeId}`
     const now = Date.now()
-    const last = recentlyNotified.get(key)
-    if (last && now - last < DEDUPE_WINDOW_MS) {
-      console.log(`[notify] skipped duplicate card-assigned email for ${key}`)
+    const last = recentlyNotified.get(opts.cardId)
+    if (last && last.assigneeId === opts.assigneeId && now - last.ts < DEDUPE_WINDOW_MS) {
+      console.log(`[notify] skipped duplicate card-assigned email for ${opts.cardId}:${opts.assigneeId}`)
       return
     }
-    recentlyNotified.set(key, now)
+    recentlyNotified.set(opts.cardId, { assigneeId: opts.assigneeId, ts: now })
     // Opportunistic cleanup so the map can't grow unbounded.
-    for (const [k, t] of recentlyNotified) {
-      if (now - t >= DEDUPE_WINDOW_MS) recentlyNotified.delete(k)
+    for (const [k, v] of recentlyNotified) {
+      if (now - v.ts >= DEDUPE_WINDOW_MS) recentlyNotified.delete(k)
     }
 
     const { mailerEnabled, sendCardAssignedEmail } = await import("@/lib/mailer")
