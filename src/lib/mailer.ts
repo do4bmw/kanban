@@ -1,13 +1,13 @@
 import nodemailer, { type Transporter } from "nodemailer"
 
-// Cache the transporter across requests. Pooling reuses TCP/TLS connections
-// instead of opening a fresh one for every single mail, which is both faster
-// and far more reliable under bursts (invites + reminders + assignments).
-let cachedTransporter: Transporter | null = null
-
-function getTransporter(): Transporter | null {
-  if (cachedTransporter) return cachedTransporter
-
+// A fresh (non-pooled) transporter per send. Pooled SMTP connections go stale
+// when the server or a firewall drops idle sockets, which then hang until the
+// socket timeout and fail intermittently — the classic "sometimes it takes
+// forever and no mail arrives" symptom. This app sends mail infrequently
+// (invites, assignments, reminders), so the tiny cost of a fresh connection is
+// well worth the reliability, especially now that sends run off the request
+// path.
+function createTransporter(): Transporter | null {
   const host = process.env.SMTP_HOST
   if (!host) return null
 
@@ -18,7 +18,7 @@ function getTransporter(): Transporter | null {
   const secureEnv = process.env.SMTP_SECURE
   const secure = secureEnv !== undefined ? secureEnv === "true" : port === 465
 
-  cachedTransporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host,
     port,
     secure,
@@ -32,14 +32,10 @@ function getTransporter(): Transporter | null {
       // Allow self-signed certs on internal mail servers
       rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "false",
     },
-    pool: true,
-    maxConnections: 3,
-    connectionTimeout: 20_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 20_000,
+    connectionTimeout: 15_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
   })
-
-  return cachedTransporter
 }
 
 export function mailerEnabled(): boolean {
@@ -47,21 +43,15 @@ export function mailerEnabled(): boolean {
 }
 
 const MAIL_TIMEOUT_MS = 20_000
+const MAX_ATTEMPTS = 2
 
-export async function sendMail(opts: { to: string; subject: string; html: string }) {
-  const transporter = getTransporter()
+async function sendOnce(opts: { to: string; subject: string; html: string }) {
+  const transporter = createTransporter()
   const from = process.env.SMTP_FROM || "Kanban <noreply@kanban.local>"
-
-  if (!transporter) {
-    console.log("[mailer] SMTP not configured — would have sent:")
-    console.log(`  To: ${opts.to}`)
-    console.log(`  Subject: ${opts.subject}`)
-    console.log(`  Body (text): ${opts.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}`)
-    return
-  }
+  if (!transporter) throw new Error("SMTP not configured")
 
   // Guard every send with a single, properly-cleared timeout so a hung SMTP
-  // connection can never block a request handler indefinitely.
+  // connection can never block indefinitely.
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error("Mail timeout")), MAIL_TIMEOUT_MS)
@@ -70,7 +60,32 @@ export async function sendMail(opts: { to: string; subject: string; html: string
     await Promise.race([transporter.sendMail({ from, ...opts }), timeout])
   } finally {
     if (timer) clearTimeout(timer)
+    transporter.close()
   }
+}
+
+export async function sendMail(opts: { to: string; subject: string; html: string }) {
+  if (!mailerEnabled()) {
+    console.log("[mailer] SMTP not configured — would have sent:")
+    console.log(`  To: ${opts.to}`)
+    console.log(`  Subject: ${opts.subject}`)
+    console.log(`  Body (text): ${opts.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}`)
+    return
+  }
+
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      await sendOnce(opts)
+      if (attempt > 1) console.log(`[mailer] sent to ${opts.to} on attempt ${attempt}`)
+      return
+    } catch (err) {
+      lastErr = err
+      console.error(`[mailer] attempt ${attempt}/${MAX_ATTEMPTS} to ${opts.to} failed:`, err)
+      if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 1500))
+    }
+  }
+  throw lastErr
 }
 
 export async function sendTestMail(to: string) {

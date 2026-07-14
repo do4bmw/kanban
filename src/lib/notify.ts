@@ -36,6 +36,7 @@ export async function notifyCardAssigned(opts: {
       cardUrl,
       assigner?.name || "Jemand"
     )
+    console.log(`[notify] card-assigned email sent to ${assignee.email} (card ${opts.cardId})`)
   } catch (err) {
     console.error("[notify] Failed to send card-assigned email:", err)
   }
