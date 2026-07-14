@@ -53,7 +53,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
     await logActivity(card.id, "CREATED", userId)
     if (card.assigneeId) {
       await logActivity(card.id, "ASSIGNED", userId, { assigneeId: card.assigneeId })
-      await notifyCardAssigned({
+      // Fire-and-forget so the response is instant (see cards/[cardId] route).
+      void notifyCardAssigned({
         cardId: card.id,
         cardTitle: card.title,
         assigneeId: card.assigneeId,

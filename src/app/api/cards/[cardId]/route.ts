@@ -103,9 +103,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ca
         await logActivity(cardId, newAssignee ? "ASSIGNED" : "UNASSIGNED", userId, {
           assigneeId: newAssignee,
         })
-        // Email the newly-assigned user (best-effort, non-blocking on failure).
+        // Email the newly-assigned user. Fire-and-forget: the send runs in the
+        // background so the response is instant and slow SMTP never blocks the
+        // save. notifyCardAssigned never throws (best-effort + logged).
         if (newAssignee) {
-          await notifyCardAssigned({
+          void notifyCardAssigned({
             cardId,
             cardTitle: updated.title,
             assigneeId: newAssignee,
