@@ -53,7 +53,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
     const { columns } = body as { columns: { id: string; order: number }[] }
     if (!Array.isArray(columns)) return NextResponse.json({ error: "columns array required" }, { status: 400 })
 
-    await prisma.$transaction(columns.map((c) => prisma.column.update({ where: { id: c.id }, data: { order: c.order } })))
+    // Scope each update to this project so columns of another project can't be
+    // reordered by passing their ids.
+    await prisma.$transaction(
+      columns.map((c) =>
+        prisma.column.updateMany({ where: { id: c.id, projectId }, data: { order: c.order } })
+      )
+    )
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error(err)

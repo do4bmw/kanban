@@ -57,7 +57,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ c
     const { labelId } = body
     if (!labelId) return NextResponse.json({ error: "labelId is required" }, { status: 400 })
 
-    await prisma.cardLabel.delete({ where: { id: labelId } })
+    // Scope the delete to this card so a label from another card/project can't
+    // be removed by passing its id.
+    const result = await prisma.cardLabel.deleteMany({ where: { id: labelId, cardId } })
+    if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error(err)
