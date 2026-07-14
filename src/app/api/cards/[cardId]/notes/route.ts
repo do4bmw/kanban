@@ -3,11 +3,12 @@ import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getProjectAccess } from "@/lib/project-access"
 import { logActivity } from "@/lib/activity"
+import { notifyCardNote } from "@/lib/notify"
 
 async function getCardWithAccess(cardId: string, userId: string) {
   const card = await prisma.card.findUnique({
     where: { id: cardId },
-    include: { column: { select: { projectId: true } } },
+    include: { column: { select: { projectId: true, project: { select: { name: true } } } } },
   })
   if (!card) return { card: null, access: null }
   const access = await getProjectAccess(userId, card.column.projectId)
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ car
 
   try {
     const body = await req.json()
-    const { content } = body
+    const { content, notify = true } = body
     if (!content?.trim()) return NextResponse.json({ error: "Content is required" }, { status: 400 })
 
     const note = await prisma.cardNote.create({
@@ -55,6 +56,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ car
       include: { author: { select: { id: true, name: true, email: true } } },
     })
     await logActivity(cardId, "NOTE_ADDED", userId)
+
+    // Notify involved people (assignee, creator, prior commenters) unless the
+    // author opted out. Fire-and-forget so the response stays instant.
+    if (notify) {
+      void notifyCardNote({
+        cardId,
+        cardTitle: card.title,
+        projectId: card.column.projectId,
+        projectName: card.column.project.name,
+        authorId: userId,
+        noteContent: content.trim(),
+      })
+    }
     return NextResponse.json(note, { status: 201 })
   } catch (err) {
     console.error(err)
