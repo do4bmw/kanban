@@ -176,15 +176,23 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   }, [card.id, activeTab])
 
   useEffect(() => {
-    fetch(`/api/orgs/${orgId}/members`)
-      .then(async (r) => {
-        if (r.ok) {
-          const data = await r.json()
-          if (Array.isArray(data)) setMembers(data)
-        } else {
-          const r2 = await fetch(`/api/projects/${projectId}/members`)
-          if (r2.ok) { const data = await r2.json(); if (Array.isArray(data)) setMembers(data) }
-        }
+    // Assignees can be org members OR project-only members — merge both, deduped by user id.
+    Promise.all([
+      fetch(`/api/orgs/${orgId}/members`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`/api/projects/${projectId}/members`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+    ])
+      .then(([orgMembers, projectMembers]) => {
+        const combined = [
+          ...(Array.isArray(orgMembers) ? orgMembers : []),
+          ...(Array.isArray(projectMembers) ? projectMembers : []),
+        ]
+        const seen = new Set<string>()
+        const deduped = combined.filter((m: Member) => {
+          if (!m?.user?.id || seen.has(m.user.id)) return false
+          seen.add(m.user.id)
+          return true
+        })
+        setMembers(deduped)
       })
       .catch(() => {})
   }, [orgId, projectId])
