@@ -20,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   // Mask the email — show only the domain part so the UI can guide the user
   // without leaking the full address to unauthenticated callers.
   const [localPart, domain] = invitation.email.split("@")
-  const maskedEmail = `${localPart[0]}***@${domain}`
+  const maskedEmail = domain ? `${localPart[0] ?? "?"}***@${domain}` : invitation.email
 
   return NextResponse.json({
     orgId: invitation.orgId,

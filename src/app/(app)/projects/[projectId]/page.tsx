@@ -338,12 +338,12 @@ export default function ProjectPage({ params }: ProjectPageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
       })
-      if (!res.ok) throw new Error("Fehler")
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Einladung konnte nicht erstellt werden.")
       setInviteResult({ inviteUrl: data.inviteUrl, emailSent: data.emailSent })
       toast.success("Einladung erstellt!")
-    } catch {
-      toast.error("Einladung konnte nicht erstellt werden.")
+    } catch (err: any) {
+      toast.error(err.message || "Einladung konnte nicht erstellt werden.")
     } finally {
       setInviting(false)
     }

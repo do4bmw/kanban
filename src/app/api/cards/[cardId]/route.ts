@@ -4,13 +4,14 @@ import prisma from "@/lib/prisma"
 import { canEditCards, canDeleteCards } from "@/lib/permissions"
 import { getProjectAccess } from "@/lib/project-access"
 import { logActivity } from "@/lib/activity"
+import { notifyCardAssigned } from "@/lib/notify"
 import { OrgRole, Priority } from "@prisma/client"
 
 async function getCardWithAccess(cardId: string, userId: string) {
   const card = await prisma.card.findUnique({
     where: { id: cardId },
     include: {
-      column: { select: { projectId: true } },
+      column: { select: { id: true, projectId: true, project: { select: { name: true } } } },
       labels: true,
       assignee: { select: { id: true, name: true, email: true } },
     },
@@ -102,9 +103,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ca
         await logActivity(cardId, newAssignee ? "ASSIGNED" : "UNASSIGNED", userId, {
           assigneeId: newAssignee,
         })
+        // Email the newly-assigned user (best-effort, non-blocking on failure).
+        if (newAssignee) {
+          await notifyCardAssigned({
+            cardId,
+            cardTitle: updated.title,
+            assigneeId: newAssignee,
+            assignerId: userId,
+            projectId: card.column.projectId,
+            projectName: card.column.project.name,
+          })
+        }
       }
     }
-    if (columnId !== undefined && columnId !== card.column.projectId) {
+    if (columnId !== undefined && columnId !== card.column.id) {
       await logActivity(cardId, "MOVED", userId, { columnId })
     }
     if (archived !== undefined && archived !== card.archived) {

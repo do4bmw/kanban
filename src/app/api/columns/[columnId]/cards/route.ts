@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma"
 import { canEditCards } from "@/lib/permissions"
 import { getAccessForColumn } from "@/lib/project-access"
 import { logActivity } from "@/lib/activity"
+import { notifyCardAssigned } from "@/lib/notify"
 import { OrgRole } from "@prisma/client"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ columnId: string }> }) {
@@ -19,7 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
 
-  const column = await prisma.column.findUnique({ where: { id: columnId } })
+  const column = await prisma.column.findUnique({
+    where: { id: columnId },
+    include: { project: { select: { id: true, name: true } } },
+  })
   if (!column) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   try {
@@ -47,6 +51,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
     })
 
     await logActivity(card.id, "CREATED", userId)
+    if (card.assigneeId) {
+      await logActivity(card.id, "ASSIGNED", userId, { assigneeId: card.assigneeId })
+      await notifyCardAssigned({
+        cardId: card.id,
+        cardTitle: card.title,
+        assigneeId: card.assigneeId,
+        assignerId: userId,
+        projectId: column.project.id,
+        projectName: column.project.name,
+      })
+    }
     return NextResponse.json(card, { status: 201 })
   } catch (err) {
     console.error(err)
