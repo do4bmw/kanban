@@ -13,11 +13,42 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pro
   const access = await getProjectAccess(userId, projectId)
   if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
-  const members = await prisma.projectMember.findMany({
-    where: { projectId },
-    include: { user: { select: { id: true, name: true, email: true } } },
-    orderBy: { createdAt: "asc" },
-  })
+  // Explicit project members + implicit ones: org OWNER/ADMIN have full access
+  // to every project in the org without a ProjectMember row, so include them
+  // (e.g. the org creator) and mark them as coming "via org" so the UI can
+  // show them without offering a remove button.
+  const [projectMembers, orgAdmins] = await Promise.all([
+    prisma.projectMember.findMany({
+      where: { projectId },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.orgMember.findMany({
+      where: { orgId: access.orgId, role: { in: ["OWNER", "ADMIN"] } },
+      include: { user: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+  ])
+
+  const seen = new Set<string>()
+  const members: Array<{
+    id: string
+    role: string
+    via: "org" | "project"
+    user: { id: string; name: string; email: string }
+  }> = []
+
+  // Org owners/admins first — their org-level access takes precedence and is
+  // not removable at the project level.
+  for (const m of orgAdmins) {
+    seen.add(m.user.id)
+    members.push({ id: m.id, role: m.role, via: "org", user: m.user })
+  }
+  for (const m of projectMembers) {
+    if (seen.has(m.user.id)) continue
+    seen.add(m.user.id)
+    members.push({ id: m.id, role: m.role, via: "project", user: m.user })
+  }
 
   return NextResponse.json(members)
 }
