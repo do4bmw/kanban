@@ -3,19 +3,31 @@ import type SMTPTransport from "nodemailer/lib/smtp-transport"
 
 // A fresh (non-pooled) transporter per send. Pooled SMTP connections go stale
 // when the server or a firewall drops idle sockets, which then hang until the
-// socket timeout and fail intermittently — the classic "sometimes it takes
-// forever and no mail arrives" symptom. This app sends mail infrequently
+// socket timeout and fail intermittently. This app sends mail infrequently
 // (invites, assignments, reminders), so the tiny cost of a fresh connection is
 // well worth the reliability, especially now that sends run off the request
 // path.
-function createTransporter(): Transporter | null {
-  const host = process.env.SMTP_HOST
-  if (!host) return null
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
 
+// Timeouts default generously: the observed "Error: Timeout" on the first
+// attempt is nodemailer's greetingTimeout — the mail server delays its 220
+// greeting on a cold connection (greylisting / anti-spam tarpit), and 8s was
+// too short. Since sends run in the background, waiting longer costs nothing.
+// All tunable per env without a rebuild.
+const CONNECTION_TIMEOUT = envInt("SMTP_CONNECTION_TIMEOUT", 30_000)
+const GREETING_TIMEOUT = envInt("SMTP_GREETING_TIMEOUT", 30_000)
+const SOCKET_TIMEOUT = envInt("SMTP_SOCKET_TIMEOUT", 30_000)
+const MAX_ATTEMPTS = envInt("SMTP_MAX_ATTEMPTS", 4)
+const SMTP_DEBUG = process.env.SMTP_DEBUG === "true"
+
+function createTransporterOptions(): SMTPTransport.Options {
+  const host = process.env.SMTP_HOST as string
   const port = parseInt(process.env.SMTP_PORT || "587", 10)
-  // SMTP_SECURE=true → implicit TLS (port 465)
-  // SMTP_SECURE=false → plain/STARTTLS
-  // default: auto-detect by port
   const secureEnv = process.env.SMTP_SECURE
   const secure = secureEnv !== undefined ? secureEnv === "true" : port === 465
 
@@ -33,42 +45,32 @@ function createTransporter(): Transporter | null {
       // Allow self-signed certs on internal mail servers
       rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "false",
     },
-    connectionTimeout: 12_000,
-    greetingTimeout: 8_000,
-    socketTimeout: 15_000,
+    connectionTimeout: CONNECTION_TIMEOUT,
+    greetingTimeout: GREETING_TIMEOUT,
+    socketTimeout: SOCKET_TIMEOUT,
+    // Set SMTP_DEBUG=true to log the full SMTP handshake to stdout.
+    logger: SMTP_DEBUG,
+    debug: SMTP_DEBUG,
   }
 
-  // Force IPv4. Many hosts publish an AAAA record whose SMTP port is
-  // firewalled, so the first connection stalls on IPv6 until it times out
-  // ("attempt 1 failed: Timeout") and only the IPv4 retry succeeds. `family`
-  // is passed through to net.connect but isn't in nodemailer's typings.
+  // Force IPv4. Some hosts publish an AAAA record whose SMTP port is
+  // firewalled. `family` is passed through to net.connect but isn't in
+  // nodemailer's typings.
   ;(options as SMTPTransport.Options & { family?: number }).family = 4
 
-  return nodemailer.createTransport(options)
+  return options
 }
 
 export function mailerEnabled(): boolean {
   return !!process.env.SMTP_HOST
 }
 
-const MAIL_TIMEOUT_MS = 20_000
-const MAX_ATTEMPTS = 2
-
 async function sendOnce(opts: { to: string; subject: string; html: string }) {
-  const transporter = createTransporter()
+  const transporter: Transporter = nodemailer.createTransport(createTransporterOptions())
   const from = process.env.SMTP_FROM || "Kanban <noreply@kanban.local>"
-  if (!transporter) throw new Error("SMTP not configured")
-
-  // Guard every send with a single, properly-cleared timeout so a hung SMTP
-  // connection can never block indefinitely.
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("Mail timeout")), MAIL_TIMEOUT_MS)
-  })
   try {
-    await Promise.race([transporter.sendMail({ from, ...opts }), timeout])
+    await transporter.sendMail({ from, ...opts })
   } finally {
-    if (timer) clearTimeout(timer)
     transporter.close()
   }
 }
@@ -84,14 +86,19 @@ export async function sendMail(opts: { to: string; subject: string; html: string
 
   let lastErr: unknown
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const started = Date.now()
     try {
       await sendOnce(opts)
-      if (attempt > 1) console.log(`[mailer] sent to ${opts.to} on attempt ${attempt}`)
+      console.log(`[mailer] sent to ${opts.to} on attempt ${attempt}/${MAX_ATTEMPTS} in ${Date.now() - started}ms`)
       return
     } catch (err) {
       lastErr = err
-      console.error(`[mailer] attempt ${attempt}/${MAX_ATTEMPTS} to ${opts.to} failed:`, err)
-      if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 1500))
+      console.error(
+        `[mailer] attempt ${attempt}/${MAX_ATTEMPTS} to ${opts.to} failed after ${Date.now() - started}ms:`,
+        err instanceof Error ? err.message : err
+      )
+      // Exponential backoff: 2s, 4s, 8s … between attempts.
+      if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 2000 * attempt))
     }
   }
   throw lastErr
