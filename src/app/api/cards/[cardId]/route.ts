@@ -63,6 +63,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ca
       return NextResponse.json({ error: "Invalid priority" }, { status: 400 })
     }
 
+    // A moved card must land in a column of the same project — never let a
+    // card be relocated into another project by passing a foreign columnId.
+    if (columnId !== undefined && columnId !== card.column.id) {
+      const target = await prisma.column.findUnique({
+        where: { id: columnId },
+        select: { projectId: true },
+      })
+      if (!target || target.projectId !== card.column.projectId) {
+        return NextResponse.json({ error: "Invalid target column" }, { status: 400 })
+      }
+    }
+
     const updated = await prisma.card.update({
       where: { id: cardId },
       data: {

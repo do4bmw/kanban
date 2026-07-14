@@ -86,9 +86,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
     const { cards } = body as { cards: { id: string; columnId: string; order: number }[] }
     if (!Array.isArray(cards)) return NextResponse.json({ error: "cards array required" }, { status: 400 })
 
+    // Only accept target columns that belong to this project, so cards can't be
+    // moved into another project's column by passing a foreign columnId.
+    const projectColumns = await prisma.column.findMany({
+      where: { projectId: access.projectId },
+      select: { id: true },
+    })
+    const allowedColumnIds = new Set(projectColumns.map((c) => c.id))
+    if (cards.some((c) => !allowedColumnIds.has(c.columnId))) {
+      return NextResponse.json({ error: "Invalid target column" }, { status: 400 })
+    }
+
+    // updateMany scoped to this project ignores any card id that isn't in it,
+    // preventing reordering of cards the caller can't access.
     await prisma.$transaction(
       cards.map((c) =>
-        prisma.card.update({ where: { id: c.id }, data: { columnId: c.columnId, order: c.order } })
+        prisma.card.updateMany({
+          where: { id: c.id, column: { projectId: access.projectId } },
+          data: { columnId: c.columnId, order: c.order },
+        })
       )
     )
 
