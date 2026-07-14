@@ -106,6 +106,7 @@ interface ProjectData {
 interface ProjectMember {
   id: string
   role: string
+  via?: "org" | "project"
   user: { id: string; name: string; email: string }
 }
 
@@ -833,10 +834,14 @@ export default function ProjectPage({ params }: ProjectPageProps) {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">{m.role}</Badge>
-                        {canManage && (
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => handleRemoveProjectMember(m.user.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                        {m.via === "org" ? (
+                          <Badge variant="outline" className="text-xs">Organisation</Badge>
+                        ) : (
+                          canManage && (
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => handleRemoveProjectMember(m.user.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )
                         )}
                       </div>
                     </div>
