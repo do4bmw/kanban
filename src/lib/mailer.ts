@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer"
+import type SMTPTransport from "nodemailer/lib/smtp-transport"
 
 // A fresh (non-pooled) transporter per send. Pooled SMTP connections go stale
 // when the server or a firewall drops idle sockets, which then hang until the
@@ -18,7 +19,7 @@ function createTransporter(): Transporter | null {
   const secureEnv = process.env.SMTP_SECURE
   const secure = secureEnv !== undefined ? secureEnv === "true" : port === 465
 
-  return nodemailer.createTransport({
+  const options: SMTPTransport.Options = {
     host,
     port,
     secure,
@@ -32,10 +33,18 @@ function createTransporter(): Transporter | null {
       // Allow self-signed certs on internal mail servers
       rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "false",
     },
-    connectionTimeout: 15_000,
-    greetingTimeout: 10_000,
+    connectionTimeout: 12_000,
+    greetingTimeout: 8_000,
     socketTimeout: 15_000,
-  })
+  }
+
+  // Force IPv4. Many hosts publish an AAAA record whose SMTP port is
+  // firewalled, so the first connection stalls on IPv6 until it times out
+  // ("attempt 1 failed: Timeout") and only the IPv4 retry succeeds. `family`
+  // is passed through to net.connect but isn't in nodemailer's typings.
+  ;(options as SMTPTransport.Options & { family?: number }).family = 4
+
+  return nodemailer.createTransport(options)
 }
 
 export function mailerEnabled(): boolean {
