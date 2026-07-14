@@ -280,6 +280,55 @@ export async function sendCardAssignedEmail(
   await sendMail({ to, subject, html })
 }
 
+export async function sendCardNoteEmail(
+  to: string,
+  recipientName: string,
+  authorName: string,
+  noteContent: string,
+  cardTitle: string,
+  projectName: string,
+  cardUrl: string
+) {
+  const appName = process.env.NEXT_PUBLIC_APP_NAME || "Kanban"
+  const subject = `Neue Notiz an "${cardTitle}"`
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  const preview = noteContent.length > 500 ? `${noteContent.slice(0, 500)}…` : noteContent
+  const html = `
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:system-ui,-apple-system,sans-serif;">
+  <div style="max-width:560px;margin:40px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#4f46e5;padding:32px 40px;">
+      <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">${appName}</h1>
+    </div>
+    <div style="padding:40px;">
+      <h2 style="margin:0 0 16px;font-size:20px;color:#111827;">Neue Notiz</h2>
+      <p style="margin:0 0 12px;color:#374151;font-size:15px;line-height:1.6;">
+        Hallo ${escape(recipientName)},<br/>
+        <strong>${escape(authorName)}</strong> hat eine Notiz an der Karte
+        <strong>${escape(cardTitle)}</strong> (Projekt ${escape(projectName)}) hinterlassen:
+      </p>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;white-space:pre-wrap;">${escape(preview)}</div>
+      <div style="text-align:center;">
+        <a href="${cardUrl}"
+           style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">
+          Karte ansehen
+        </a>
+      </div>
+    </div>
+    <div style="background:#f9fafb;padding:20px 40px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">
+        Du erhältst diese E-Mail, weil du an dieser Karte beteiligt bist.
+      </p>
+    </div>
+  </div>
+</body>
+</html>`.trim()
+  await sendMail({ to, subject, html })
+}
+
 export async function sendInvitationEmail(
   to: string,
   orgName: string,

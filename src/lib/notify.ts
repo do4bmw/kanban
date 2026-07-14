@@ -61,3 +61,74 @@ export async function notifyCardAssigned(opts: {
     console.error("[notify] Failed to send card-assigned email:", err)
   }
 }
+
+/**
+ * Best-effort email notification when a note is added to a card. Notifies the
+ * people involved with the card — its assignee, its creator, and everyone who
+ * has commented before — excluding the note's author. Never throws.
+ */
+export async function notifyCardNote(opts: {
+  cardId: string
+  cardTitle: string
+  projectId: string
+  projectName: string
+  authorId: string
+  noteContent: string
+}) {
+  try {
+    const { mailerEnabled, sendCardNoteEmail } = await import("@/lib/mailer")
+    if (!mailerEnabled()) return
+
+    const card = await prisma.card.findUnique({
+      where: { id: opts.cardId },
+      select: { assigneeId: true, createdById: true },
+    })
+    if (!card) return
+
+    const priorAuthors = await prisma.cardNote.findMany({
+      where: { cardId: opts.cardId },
+      select: { authorId: true },
+      distinct: ["authorId"],
+    })
+
+    // Involved people, minus the author of this note.
+    const recipientIds = new Set<string>()
+    if (card.assigneeId) recipientIds.add(card.assigneeId)
+    if (card.createdById) recipientIds.add(card.createdById)
+    for (const p of priorAuthors) recipientIds.add(p.authorId)
+    recipientIds.delete(opts.authorId)
+    if (recipientIds.size === 0) return
+
+    const [author, recipients] = await Promise.all([
+      prisma.user.findUnique({ where: { id: opts.authorId }, select: { name: true } }),
+      prisma.user.findMany({
+        where: { id: { in: [...recipientIds] } },
+        select: { name: true, email: true },
+      }),
+    ])
+
+    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000"
+    const cardUrl = `${baseUrl}/projects/${opts.projectId}`
+    const authorName = author?.name || "Jemand"
+
+    for (const r of recipients) {
+      if (!r.email) continue
+      try {
+        await sendCardNoteEmail(
+          r.email,
+          r.name || "dort",
+          authorName,
+          opts.noteContent,
+          opts.cardTitle,
+          opts.projectName,
+          cardUrl
+        )
+        console.log(`[notify] card-note email sent to ${r.email} (card ${opts.cardId})`)
+      } catch (err) {
+        console.error(`[notify] card-note email to ${r.email} failed:`, err)
+      }
+    }
+  } catch (err) {
+    console.error("[notify] Failed to send card-note emails:", err)
+  }
+}

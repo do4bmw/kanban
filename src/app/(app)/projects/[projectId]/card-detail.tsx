@@ -146,6 +146,7 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
   const [notes, setNotes] = useState<CardNote[]>([])
   const [notesLoading, setNotesLoading] = useState(true)
   const [newNoteContent, setNewNoteContent] = useState("")
+  const [notifyOnNote, setNotifyOnNote] = useState(true)
   const [addingNote, setAddingNote] = useState(false)
 
   // Activity state
@@ -321,7 +322,7 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
       const res = await fetch(`/api/cards/${card.id}/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: newNoteContent.trim() }),
+        body: JSON.stringify({ content: newNoteContent.trim(), notify: notifyOnNote }),
       })
       if (!res.ok) throw new Error()
       const note = await res.json()
@@ -584,16 +585,27 @@ export function CardDetailDialog({ card, orgId, projectId, onClose, onUpdate, on
                     ))
                   )}
                 </div>
-                <form onSubmit={handleAddNote} className="flex gap-2 mt-1">
-                  <Input
-                    placeholder="Notiz hinzufügen..."
-                    value={newNoteContent}
-                    onChange={(e) => setNewNoteContent(e.target.value)}
-                    className="flex-1"
-                  />
-                  <Button type="submit" size="sm" variant="outline" disabled={addingNote || !newNoteContent.trim()}>
-                    {addingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  </Button>
+                <form onSubmit={handleAddNote} className="mt-1 space-y-1.5">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Notiz hinzufügen..."
+                      value={newNoteContent}
+                      onChange={(e) => setNewNoteContent(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button type="submit" size="sm" variant="outline" disabled={addingNote || !newNoteContent.trim()}>
+                      {addingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <input
+                      type="checkbox"
+                      checked={notifyOnNote}
+                      onChange={(e) => setNotifyOnNote(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
+                    />
+                    Beteiligte per E-Mail benachrichtigen (Zugewiesene, Ersteller, bisherige Kommentatoren)
+                  </label>
                 </form>
               </>
             )}
