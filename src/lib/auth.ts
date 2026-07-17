@@ -5,8 +5,18 @@ import prisma from "./prisma"
 
 export { getServerSession } from "next-auth"
 
+// How long a login stays valid, in hours. Configurable via env (e.g. 8 or 24)
+// without a rebuild; defaults to 24 hours. The cookie/JWT maxAge derives from
+// this, so users stay signed in across visits until it expires.
+const sessionHours = (() => {
+  const n = parseInt(process.env.SESSION_MAX_AGE_HOURS || "", 10)
+  return Number.isFinite(n) && n > 0 ? n : 24
+})()
+const SESSION_MAX_AGE = sessionHours * 60 * 60
+
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_AGE },
+  jwt: { maxAge: SESSION_MAX_AGE },
   secret: process.env.NEXTAUTH_SECRET,
   providers: [
     CredentialsProvider({
