@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { logAudit } from "@/lib/audit"
 
 async function getMembership(userId: string, orgId: string) {
   return prisma.orgMember.findUnique({ where: { userId_orgId: { userId, orgId } } })
@@ -61,6 +62,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
         { name: "Review", order: 3, projectId: project.id },
         { name: "Done", order: 4, projectId: project.id },
       ],
+    })
+
+    await logAudit({
+      action: "project.create",
+      entityType: "project",
+      entityId: project.id,
+      summary: `Projekt „${project.name}" erstellt`,
+      actorId: userId,
     })
 
     return NextResponse.json(project, { status: 201 })

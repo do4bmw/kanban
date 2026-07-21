@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getProjectAccess } from "@/lib/project-access"
+import { logAudit } from "@/lib/audit"
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await getServerSession(authOptions)
@@ -73,6 +74,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
 
+  const removed = await prisma.project.findUnique({ where: { id: projectId }, select: { name: true } })
   await prisma.project.delete({ where: { id: projectId } })
+  await logAudit({
+    action: "project.delete",
+    entityType: "project",
+    entityId: projectId,
+    summary: `Projekt „${removed?.name ?? projectId}" gelöscht`,
+    actorId: userId,
+  })
   return NextResponse.json({ success: true })
 }

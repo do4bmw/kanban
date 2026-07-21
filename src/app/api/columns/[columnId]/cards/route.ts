@@ -5,6 +5,7 @@ import { canEditCards } from "@/lib/permissions"
 import { getAccessForColumn } from "@/lib/project-access"
 import { logActivity } from "@/lib/activity"
 import { notifyCardAssigned } from "@/lib/notify"
+import { logAudit } from "@/lib/audit"
 import { OrgRole } from "@prisma/client"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ columnId: string }> }) {
@@ -51,6 +52,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ col
     })
 
     await logActivity(card.id, "CREATED", userId)
+    await logAudit({
+      action: "card.create",
+      entityType: "card",
+      entityId: card.id,
+      summary: `Karte „${card.title}" erstellt`,
+      actorId: userId,
+      metadata: { projectName: column.project.name },
+    })
     if (card.assigneeId) {
       await logActivity(card.id, "ASSIGNED", userId, { assigneeId: card.assigneeId })
       // Fire-and-forget so the response is instant (see cards/[cardId] route).

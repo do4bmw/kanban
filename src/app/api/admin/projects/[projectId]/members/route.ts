@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { logAudit } from "@/lib/audit"
 import { OrgRole } from "@prisma/client"
 
 function isAdmin(session: unknown): boolean {
   return !!session && (session as { user?: { role?: string } }).user?.role === "ADMIN"
+}
+
+function actorId(session: unknown): string | null {
+  return (session as { user?: { id?: string } })?.user?.id ?? null
 }
 
 const VALID_ROLES: OrgRole[] = ["ADMIN", "MEMBER", "VIEWER"]
@@ -36,6 +41,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     include: { user: { select: { id: true, name: true, email: true } } },
   })
 
+  await logAudit({
+    action: "member.project_add",
+    entityType: "member",
+    entityId: userId,
+    summary: `„${member.user.name}" als ${role} zum Projekt hinzugefügt`,
+    actorId: actorId(session),
+    metadata: { projectId, role },
+  })
+
   return NextResponse.json(member, { status: 201 })
 }
 
@@ -55,6 +69,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
   })
   if (!target) return NextResponse.json({ error: "Mitglied nicht gefunden" }, { status: 404 })
 
+  const removed = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
   await prisma.projectMember.delete({ where: { userId_projectId: { userId, projectId } } })
+  await logAudit({
+    action: "member.project_remove",
+    entityType: "member",
+    entityId: userId,
+    summary: `„${removed?.name ?? userId}" aus dem Projekt entfernt`,
+    actorId: actorId(session),
+    metadata: { projectId },
+  })
   return NextResponse.json({ success: true })
 }
