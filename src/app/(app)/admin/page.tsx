@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -8,8 +8,19 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2, Mail, Send, UserPlus, Tag, Plus, Settings } from "lucide-react"
+import { Loader2, Shield, Users, Building2, LayoutDashboard, Trash2, Mail, Send, UserPlus, Tag, Plus, Settings, ScrollText } from "lucide-react"
 import { OrgMembersDialog } from "./org-members-dialog"
+
+interface AuditEntry {
+  id: string
+  action: string
+  entityType: string
+  entityId: string | null
+  summary: string | null
+  createdAt: string
+  userName: string | null
+  userEmail: string | null
+}
 
 interface AdminUser {
   id: string
@@ -46,7 +57,7 @@ const LABEL_COLORS = [
   "#ec4899", "#6b7280",
 ]
 
-type Tab = "overview" | "users" | "orgs" | "email" | "labels"
+type Tab = "overview" | "users" | "orgs" | "email" | "labels" | "audit"
 
 export default function AdminPage() {
   const { data: session, status } = useSession()
@@ -68,6 +79,9 @@ export default function AdminPage() {
   const [addingLabel, setAddingLabel] = useState(false)
   const [deletingLabelId, setDeletingLabelId] = useState<string | null>(null)
   const [managingOrg, setManagingOrg] = useState<{ id: string; name: string } | null>(null)
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditQuery, setAuditQuery] = useState("")
 
   const currentUser = session?.user as any
 
@@ -111,6 +125,27 @@ export default function AdminPage() {
       setLoading(false)
     }
   }
+
+  const loadAudit = useCallback(async (q: string) => {
+    setAuditLoading(true)
+    try {
+      const res = await fetch(`/api/admin/audit?limit=200${q ? `&q=${encodeURIComponent(q)}` : ""}`)
+      if (res.ok) {
+        const data = await res.json()
+        setAuditEntries(Array.isArray(data.entries) ? data.entries : [])
+      }
+    } catch {
+      toast.error("Audit-Log konnte nicht geladen werden.")
+    } finally {
+      setAuditLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab !== "audit") return
+    const t = setTimeout(() => loadAudit(auditQuery), 300)
+    return () => clearTimeout(t)
+  }, [tab, auditQuery, loadAudit])
 
   async function handleAddLabel(e: React.FormEvent) {
     e.preventDefault()
@@ -266,6 +301,7 @@ export default function AdminPage() {
     { id: "orgs", label: "Organisationen", icon: <Building2 className="h-4 w-4" /> },
     { id: "labels", label: "Labels", icon: <Tag className="h-4 w-4" /> },
     { id: "email", label: "E-Mail", icon: <Mail className="h-4 w-4" /> },
+    { id: "audit", label: "Audit-Log", icon: <ScrollText className="h-4 w-4" /> },
   ]
 
   return (
@@ -614,6 +650,62 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Audit-Log */}
+      {tab === "audit" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Aktivitäten der letzten 60 Tage (Karten, Spalten, Projekte, Mitglieder, Benutzer).
+            </p>
+            <Input
+              placeholder="Suchen (Nutzer, E-Mail, Aktion)…"
+              value={auditQuery}
+              onChange={(e) => setAuditQuery(e.target.value)}
+              className="w-64"
+            />
+          </div>
+
+          {auditLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+            </div>
+          ) : auditEntries.length === 0 ? (
+            <p className="py-12 text-center text-sm text-gray-400">Keine Einträge.</p>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/50">
+                  <tr>
+                    {["Zeitpunkt", "Benutzer", "Aktion", "Details"].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                  {auditEntries.map((e) => (
+                    <tr key={e.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                        {new Date(e.createdAt).toLocaleString("de-DE")}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm">
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{e.userName ?? "—"}</span>
+                        {e.userEmail && <span className="block text-xs text-gray-400">{e.userEmail}</span>}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <Badge variant="secondary" className="font-mono text-xs">{e.action}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{e.summary ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

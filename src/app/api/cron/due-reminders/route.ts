@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
 import { sendMail } from "@/lib/mailer"
+import { pruneAuditLog } from "@/lib/audit"
 
 // Protected by a shared secret; call this endpoint from a cron job:
 // curl -H "Authorization: Bearer $CRON_SECRET" https://your-domain/api/cron/due-reminders
@@ -108,6 +109,9 @@ export async function POST(req: NextRequest) {
       console.error(`[due-reminders] Failed to send for card ${card.id}:`, err)
     }
   }
+
+  // Enforce audit-log retention on the same schedule.
+  await pruneAuditLog()
 
   return NextResponse.json({ checked: cards.length, sent })
 }

@@ -5,6 +5,7 @@ import { canEditCards, canDeleteCards } from "@/lib/permissions"
 import { getProjectAccess } from "@/lib/project-access"
 import { logActivity } from "@/lib/activity"
 import { notifyCardAssigned } from "@/lib/notify"
+import { logAudit } from "@/lib/audit"
 import { OrgRole, Priority } from "@prisma/client"
 
 async function getCardWithAccess(cardId: string, userId: string) {
@@ -140,6 +141,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ca
       await logActivity(cardId, "PRIORITY_CHANGED", userId, { from: card.priority, to: priority })
     }
 
+    await logAudit({
+      action: "card.update",
+      entityType: "card",
+      entityId: cardId,
+      summary: `Karte „${updated.title}" geändert`,
+      actorId: userId,
+      metadata: { projectName: card.column.project.name },
+    })
+
     return NextResponse.json(updated)
   } catch (err) {
     console.error(err)
@@ -162,5 +172,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   }
 
   await prisma.card.delete({ where: { id: cardId } })
+  await logAudit({
+    action: "card.delete",
+    entityType: "card",
+    entityId: cardId,
+    summary: `Karte „${card.title}" gelöscht`,
+    actorId: userId,
+    metadata: { projectName: card.column.project.name },
+  })
   return NextResponse.json({ success: true })
 }

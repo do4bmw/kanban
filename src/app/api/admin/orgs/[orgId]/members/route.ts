@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { logAudit } from "@/lib/audit"
 import { OrgRole } from "@prisma/client"
 
 function isAdmin(session: unknown): boolean {
   return !!session && (session as { user?: { role?: string } }).user?.role === "ADMIN"
+}
+
+function actorId(session: unknown): string | null {
+  return (session as { user?: { id?: string } })?.user?.id ?? null
 }
 
 const VALID_ROLES: OrgRole[] = ["OWNER", "ADMIN", "MEMBER", "VIEWER"]
@@ -69,6 +74,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     include: { user: { select: { id: true, name: true, email: true } } },
   })
 
+  await logAudit({
+    action: "member.org_add",
+    entityType: "member",
+    entityId: userId,
+    summary: `„${member.user.name}" als ${role} zur Organisation hinzugefügt`,
+    actorId: actorId(session),
+    metadata: { orgId, role },
+  })
+
   return NextResponse.json(member, { status: 201 })
 }
 
@@ -99,6 +113,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ o
     }
   }
 
+  const removed = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
   await prisma.orgMember.delete({ where: { userId_orgId: { userId, orgId } } })
+  await logAudit({
+    action: "member.org_remove",
+    entityType: "member",
+    entityId: userId,
+    summary: `„${removed?.name ?? userId}" aus der Organisation entfernt`,
+    actorId: actorId(session),
+    metadata: { orgId },
+  })
   return NextResponse.json({ success: true })
 }

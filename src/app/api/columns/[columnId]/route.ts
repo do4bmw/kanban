@@ -3,6 +3,7 @@ import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { canManageColumns } from "@/lib/permissions"
 import { getAccessForColumn } from "@/lib/project-access"
+import { logAudit } from "@/lib/audit"
 import { OrgRole } from "@prisma/client"
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ columnId: string }> }) {
@@ -28,6 +29,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
     if (color !== undefined) data.color = color || null
 
     const updated = await prisma.column.update({ where: { id: columnId }, data })
+    await logAudit({
+      action: "column.update",
+      entityType: "column",
+      entityId: columnId,
+      summary: `Spalte „${updated.name}" geändert`,
+      actorId: userId,
+    })
     return NextResponse.json(updated)
   } catch (err) {
     console.error(err)
@@ -48,6 +56,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })
   }
 
+  const removed = await prisma.column.findUnique({ where: { id: columnId }, select: { name: true } })
   await prisma.column.delete({ where: { id: columnId } })
+  await logAudit({
+    action: "column.delete",
+    entityType: "column",
+    entityId: columnId,
+    summary: `Spalte „${removed?.name ?? columnId}" gelöscht`,
+    actorId: userId,
+  })
   return NextResponse.json({ success: true })
 }

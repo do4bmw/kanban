@@ -58,6 +58,27 @@ model User {
   invitations        Invitation[]
   cardNotes          CardNote[]
   cardActivities     CardActivity[]
+  auditLogs          AuditLog[]
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // e.g. "card.create", "card.delete", "member.add"
+  entityType String   // e.g. "card", "column", "project", "org", "user", "member"
+  entityId   String?
+  summary    String?  // human-readable one-liner
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  // Actor. userId is nullable + SetNull so the row survives user deletion;
+  // name/email are snapshotted so the entry stays readable afterwards.
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName   String?
+  userEmail  String?
+
+  @@index([createdAt])
+  @@index([userId])
 }
 
 model Organization {

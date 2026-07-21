@@ -3,6 +3,7 @@ import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { canManageColumns } from "@/lib/permissions"
 import { getProjectAccess } from "@/lib/project-access"
+import { logAudit } from "@/lib/audit"
 import { OrgRole } from "@prisma/client"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
@@ -30,6 +31,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
     const order = (maxOrder._max.order ?? -1) + 1
 
     const column = await prisma.column.create({ data: { name, order, projectId } })
+    await logAudit({
+      action: "column.create",
+      entityType: "column",
+      entityId: column.id,
+      summary: `Spalte „${column.name}" erstellt`,
+      actorId: userId,
+    })
     return NextResponse.json(column, { status: 201 })
   } catch (err) {
     console.error(err)

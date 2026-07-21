@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession, authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { logAudit } from "@/lib/audit"
 
 async function requireAdmin(session: any) {
   if (!session) return false
@@ -48,6 +49,13 @@ export async function DELETE(req: NextRequest) {
     }
 
     await prisma.user.delete({ where: { id: userId } })
+    await logAudit({
+      action: "user.delete",
+      entityType: "user",
+      entityId: userId,
+      summary: `Benutzer „${targetUser.name}" (${targetUser.email}) gelöscht`,
+      actorId: currentUserId,
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error(err)
@@ -81,6 +89,15 @@ export async function PATCH(req: NextRequest) {
       where: { id: userId },
       data: { role },
       select: { id: true, name: true, email: true, role: true },
+    })
+
+    await logAudit({
+      action: "user.role_change",
+      entityType: "user",
+      entityId: userId,
+      summary: `Rolle von „${updated.name}" auf ${role} geändert`,
+      actorId: (session!.user as any).id,
+      metadata: { role },
     })
 
     return NextResponse.json(updated)
